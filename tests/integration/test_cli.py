@@ -33,7 +33,7 @@ def test_help_lists_commands(capsys):
 
 def test_version(capsys):
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == "stratum 0.1.0"
+    assert capsys.readouterr().out.strip() == "stratum 0.1.1"
 
 
 def test_unknown_command_exits_two(capsys):
