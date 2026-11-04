@@ -11,11 +11,38 @@ Stratum（时间地层）是一个独立的 Markdown 观测与索引系统。
 
 ## 状态
 
-当前处于设计阶段，尚未开始实现。
+v0.1 已实现：CLI、SQLite schema、Markdown 切块、块身份、prose、ingest、claims、review、query、history、fsck、legacy importer 与 demo。`lint` 仍是后续工作。
 
 设计文档：
 
 - [Stratum 设计（2026-11-04）](docs/design/stratum-design-2026-11-04.md)
+
+## 快速开始
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
+stratum demo
+```
+
+## 命令
+
+```text
+stratum init
+stratum workspace add/list/remove/relocate
+stratum ingest source
+stratum ingest report
+stratum add card
+stratum add claim
+stratum review list/show/promote/reject/reopen/bulk-promote
+stratum query
+stratum status
+stratum commit/log/diff/restore
+stratum fsck
+stratum migrate-legacy
+stratum demo
+```
 
 ## 边界
 
@@ -24,19 +51,6 @@ Stratum（时间地层）是一个独立的 Markdown 观测与索引系统。
 - 本仓库不保存真实个人数据。
 - `demo/` 只包含合成数据。
 
-## 计划中的命令
+## 许可
 
-```text
-stratum init
-stratum workspace
-stratum ingest
-stratum lint
-stratum status
-stratum query
-stratum commit
-stratum log
-stratum diff
-stratum restore
-stratum fsck
-stratum migrate-legacy
-```
+AGPL-3.0-only，见 [LICENSE](LICENSE)。
