@@ -1253,11 +1253,24 @@ def _import_report_relations(
                 "LEGACY_REFERENCE_MISSING",
                 f"{where}: card {to_card!r} does not exist",
             )
+        # ``observes`` maps onto the generic reference role. Any more
+        # specific relation wins when both target the same report/card pair,
+        # regardless of the order the relations appear in the JSONL.
         role = "reference" if relation == "observes" else relation
-        cursor = conn.execute(
-            "INSERT OR IGNORE INTO report_cards (report_id, card_id, role) "
-            "VALUES (?, ?, ?)",
+        existing = conn.execute(
+            "SELECT 1 FROM report_cards WHERE report_id = ? AND card_id = ?",
+            (from_report, to_card),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO report_cards (report_id, card_id, role)
+            VALUES (?, ?, ?)
+            ON CONFLICT(report_id, card_id) DO UPDATE SET role = CASE
+                WHEN excluded.role = 'reference' THEN report_cards.role
+                ELSE excluded.role
+            END
+            """,
             (from_report, to_card, role),
         )
-        if cursor.rowcount:
+        if existing is None:
             counts["report_cards"] += 1
