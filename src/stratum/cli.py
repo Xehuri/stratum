@@ -27,6 +27,8 @@ from .history import (
 )
 from .ingest_report import ingest_report_file
 from .ingest_source import ingest_source_file
+from .legacy import COUNT_ORDER as LEGACY_COUNT_ORDER
+from .legacy import import_legacy_index
 from .query import format_query_rows, query_items
 from .review import (
     ALL_ENTITY_STATUSES,
@@ -56,7 +58,6 @@ EXIT_INCOMPLETE = 3
 
 UNIMPLEMENTED_COMMANDS = (
     "lint",
-    "migrate-legacy",
     "demo",
 )
 
@@ -315,6 +316,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fsck_parser.add_argument(
         "--fix", action="store_true", help="apply only safe repairs"
+    )
+
+    legacy_parser = subparsers.add_parser(
+        "migrate-legacy", help="import a legacy JSONL index"
+    )
+    legacy_parser.add_argument(
+        "--index", required=True, metavar="PATH", help="legacy index directory"
+    )
+    legacy_parser.add_argument(
+        "--workspace",
+        "-w",
+        dest="workspace",
+        default=argparse.SUPPRESS,
+        metavar="WORKSPACE",
+        help="workspace name, id, or path (overrides discovery)",
     )
 
     for command in UNIMPLEMENTED_COMMANDS:
@@ -780,6 +796,17 @@ def _handle_fsck(args: argparse.Namespace) -> int:
     return EXIT_BUSINESS_FAILURE if result.has_errors else EXIT_OK
 
 
+def _handle_migrate_legacy(args: argparse.Namespace) -> int:
+    result = import_legacy_index(args.index, workspace=args.workspace)
+    if result.status == "unchanged":
+        _print("unchanged")
+        return EXIT_OK
+    _print(f"Imported legacy index: {result.index}")
+    for name in LEGACY_COUNT_ORDER:
+        _print(f"{name}: {result.counts.get(name, 0)}")
+    return EXIT_OK
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command is None:
         print(
@@ -811,6 +838,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_restore(args)
     if args.command == "fsck":
         return _handle_fsck(args)
+    if args.command == "migrate-legacy":
+        return _handle_migrate_legacy(args)
     if args.command in UNIMPLEMENTED_COMMANDS:
         print(
             f"stratum: error: '{args.command}' is not implemented yet; "

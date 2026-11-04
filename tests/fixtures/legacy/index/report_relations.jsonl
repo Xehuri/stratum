@@ -1,0 +1,3 @@
+{"from_report": "D-20260101", "relation": "covers", "note": "synthetic self link", "to_report": "D-20260101"}
+{"from_report": "D-20260101", "relation": "observes", "note": "synthetic card link", "to_card": "C-20260101-0001"}
+{"from_report": "D-20260101", "relation": "observes", "note": "synthetic card link", "to_card": "C-20260101-0002"}
