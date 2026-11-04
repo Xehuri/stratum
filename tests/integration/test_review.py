@@ -58,6 +58,10 @@ def _add_card(root: Path, block_id: str, capsys, **kwargs) -> str:
         "--title", kwargs.get("title", "Card title"),
         "--author", kwargs.get("author", "02-daily-review"),
     ]
+    if kwargs.get("date") is not None:
+        args.extend(["--date", kwargs["date"]])
+    if kwargs.get("period_end") is not None:
+        args.extend(["--period-end", kwargs["period_end"]])
     assert main(args) == 0
     capsys.readouterr()
     conn = _db(root)
@@ -225,18 +229,7 @@ def test_review_bulk_promotes_cards_then_daily_claims(
 ):
     root = _init(tmp_path, monkeypatch)
     block_id = _structured_block(root, capsys)
-    card_id = _add_card(root, block_id, capsys)
-
-    conn = _db(root)
-    try:
-        conn.execute(
-            "UPDATE cards SET period_start = '2026-01-05', "
-            "period_end = '2026-01-06' WHERE id = ?",
-            (card_id,),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    card_id = _add_card(root, block_id, capsys, date="2026-01-05")
 
     _add_claim(root, card_id, capsys, body="First daily claim.")
     _add_claim(
@@ -329,19 +322,8 @@ def test_review_bulk_promote_rejects_weekly_claims(
 def test_review_list_filters(tmp_path, monkeypatch, capsys):
     root = _init(tmp_path, monkeypatch)
     block_id = _structured_block(root, capsys)
-    card_id = _add_card(root, block_id, capsys)
+    card_id = _add_card(root, block_id, capsys, date="2026-01-05")
     _add_claim(root, card_id, capsys)
-
-    conn = _db(root)
-    try:
-        conn.execute(
-            "UPDATE cards SET period_start = '2026-01-05', "
-            "period_end = '2026-01-06' WHERE id = ?",
-            (card_id,),
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
     assert main(["review", "list"]) == 0
     assert "2 items" in capsys.readouterr().out

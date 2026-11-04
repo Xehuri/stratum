@@ -177,6 +177,16 @@ def build_parser() -> argparse.ArgumentParser:
     card_parser.add_argument("--body", required=True, metavar="TEXT")
     card_parser.add_argument("--title", metavar="TEXT")
     card_parser.add_argument("--author", metavar="NAME")
+    card_parser.add_argument(
+        "--date",
+        metavar="YYYY-MM-DD",
+        help="card period start; period ends the following day by default",
+    )
+    card_parser.add_argument(
+        "--period-end",
+        metavar="YYYY-MM-DD",
+        help="exclusive card period end; requires --date",
+    )
 
     claim_parser = add_sub.add_parser("claim", help="create a draft claim")
     claim_parser.add_argument("--claim-id", required=True, metavar="CLAIM_ID")
@@ -418,6 +428,8 @@ def _handle_add(args: argparse.Namespace) -> int:
             body=args.body,
             title=args.title,
             author=args.author,
+            date=args.date,
+            period_end=args.period_end,
             workspace=args.workspace,
         )
         if result.status == "unchanged":

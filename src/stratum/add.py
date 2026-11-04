@@ -11,6 +11,8 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import date as date_type
+from datetime import timedelta
 
 from .claims import (
     ClaimDraft,
@@ -65,18 +67,61 @@ def _card_title(title: str | None, body: str) -> str:
     raise ValidationError("CARD_INVALID", "card body must not be empty")
 
 
-def card_id_for(card_type: str, body: str, block_ids: list[str]) -> str:
-    payload = json.dumps(
-        {
-            "type": card_type,
-            "body": body,
-            "blocks": sorted(block_ids),
-        },
+def _card_period(
+    date_value: str | None, period_end: str | None
+) -> tuple[str | None, str | None]:
+    if date_value is None:
+        if period_end is not None:
+            raise UsageProblem("--period-end requires --date")
+        return None, None
+
+    try:
+        start = date_type.fromisoformat(date_value)
+    except (TypeError, ValueError) as exc:
+        raise UsageProblem(
+            f"invalid --date {date_value!r}; expected YYYY-MM-DD"
+        ) from exc
+
+    if period_end is None:
+        end = start + timedelta(days=1)
+    else:
+        try:
+            end = date_type.fromisoformat(period_end)
+        except (TypeError, ValueError) as exc:
+            raise UsageProblem(
+                f"invalid --period-end {period_end!r}; expected YYYY-MM-DD"
+            ) from exc
+        if end <= start:
+            raise UsageProblem("--period-end must be later than --date")
+
+    return start.isoformat(), end.isoformat()
+
+
+def card_id_for(
+    card_type: str,
+    body: str,
+    block_ids: list[str],
+    *,
+    period_start: str | None = None,
+    period_end: str | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "type": card_type,
+        "body": body,
+        "blocks": sorted(block_ids),
+    }
+    # Keep the legacy hash for undated cards so repeated adds stay idempotent
+    # against cards created before periods were introduced.
+    if period_start is not None:
+        payload["period_start"] = period_start
+        payload["period_end"] = period_end
+    encoded = json.dumps(
+        payload,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     )
-    return "C-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return "C-" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def _load_blocks(
@@ -114,6 +159,8 @@ def add_card(
     body: str,
     title: str | None = None,
     author: str | None = None,
+    date: str | None = None,
+    period_end: str | None = None,
     workspace: str | None = None,
 ) -> AddCardResult:
     if isinstance(blocks, str):
@@ -126,6 +173,7 @@ def add_card(
         raise ValidationError("CARD_INVALID", "card body must not be empty")
     if not blocks:
         raise UsageProblem("at least one --block is required")
+    period_start, period_end = _card_period(date, period_end)
 
     conn = _workspace_conn(workspace)
     try:
@@ -133,7 +181,13 @@ def add_card(
             selected = _load_blocks(conn, blocks)
             block_ids = [str(row["id"]) for row in selected]
             card_title = _card_title(title, body)
-            card_id = card_id_for(card_type, body, block_ids)
+            card_id = card_id_for(
+                card_type,
+                body,
+                block_ids,
+                period_start=period_start,
+                period_end=period_end,
+            )
 
             existing = conn.execute(
                 "SELECT * FROM cards WHERE id = ?", (card_id,)
@@ -164,10 +218,20 @@ def add_card(
                 """
                 INSERT INTO cards (
                     id, card_type, title, body, status, author,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
+                    period_start, period_end, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
                 """,
-                (card_id, card_type, card_title, body, author, now, now),
+                (
+                    card_id,
+                    card_type,
+                    card_title,
+                    body,
+                    author,
+                    period_start,
+                    period_end,
+                    now,
+                    now,
+                ),
             )
             for row in selected:
                 conn.execute(

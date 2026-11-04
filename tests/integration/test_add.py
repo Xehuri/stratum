@@ -415,3 +415,144 @@ def test_add_claim_unknown_report_exits_one(tmp_path, monkeypatch, capsys):
     args = _claim_args(card_id) + ["--report-id", "RPT-D-2099-01-01"]
     assert main(args) == 1
     assert "report not found" in capsys.readouterr().err.lower()
+
+
+def test_add_card_with_date_sets_period_and_is_bulk_promotable(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    block_id = _structured_block(root, capsys)
+
+    assert main(
+        [
+            "add", "card", "--block", block_id, "--type", "event",
+            "--body", "Dated card.", "--title", "Dated",
+            "--date", "2026-01-05",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        card = conn.execute("SELECT * FROM cards").fetchone()
+        assert card["period_start"] == "2026-01-05"
+        assert card["period_end"] == "2026-01-06"
+        card_id = card["id"]
+    finally:
+        conn.close()
+
+    assert main(
+        [
+            "review", "bulk-promote", "--type", "card",
+            "--date", "2026-01-05", "--author", "human", "--reason", "daily cards",
+        ]
+    ) == 0
+    assert f"Card {card_id}: draft -> active" in capsys.readouterr().out
+
+    conn = _db(root)
+    try:
+        assert conn.execute(
+            "SELECT status FROM cards WHERE id = ?", (card_id,)
+        ).fetchone()[0] == "active"
+    finally:
+        conn.close()
+
+
+def test_add_card_same_body_different_dates_creates_two_cards(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    block_id = _structured_block(root, capsys)
+
+    args = [
+        "add", "card", "--block", block_id, "--type", "event",
+        "--body", "Same dated body.", "--title", "Same",
+    ]
+    assert main(args + ["--date", "2026-01-05"]) == 0
+    first = capsys.readouterr().out
+    assert main(args + ["--date", "2026-01-06"]) == 0
+    second = capsys.readouterr().out
+    assert first != second
+
+    conn = _db(root)
+    try:
+        cards = conn.execute(
+            "SELECT id, period_start, period_end FROM cards ORDER BY period_start"
+        ).fetchall()
+        assert len(cards) == 2
+        assert (cards[0]["period_start"], cards[0]["period_end"]) == (
+            "2026-01-05", "2026-01-06",
+        )
+        assert (cards[1]["period_start"], cards[1]["period_end"]) == (
+            "2026-01-06", "2026-01-07",
+        )
+    finally:
+        conn.close()
+
+
+def test_add_card_with_explicit_period_end(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    block_id = _structured_block(root, capsys)
+
+    assert main(
+        [
+            "add", "card", "--block", block_id, "--type", "event",
+            "--body", "Range card.", "--date", "2026-01-05",
+            "--period-end", "2026-01-08",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        card = conn.execute("SELECT * FROM cards").fetchone()
+        assert card["period_start"] == "2026-01-05"
+        assert card["period_end"] == "2026-01-08"
+    finally:
+        conn.close()
+
+
+def test_add_card_without_date_keeps_null_period(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    block_id = _structured_block(root, capsys)
+
+    assert main(
+        ["add", "card", "--block", block_id, "--type", "event", "--body", "Undated."]
+    ) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        card = conn.execute("SELECT * FROM cards").fetchone()
+        assert card["period_start"] is None
+        assert card["period_end"] is None
+    finally:
+        conn.close()
+
+
+def test_add_card_rejects_invalid_date_and_period_end(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    block_id = _structured_block(root, capsys)
+    base = ["add", "card", "--block", block_id, "--type", "event", "--body", "x"]
+
+    assert main(base + ["--date", "2026-02-30"]) == 2
+    assert "invalid --date" in capsys.readouterr().err
+
+    assert main(
+        base + ["--date", "2026-01-05", "--period-end", "2026-01-05"]
+    ) == 2
+    assert "later than --date" in capsys.readouterr().err
+
+    assert main(base + ["--date", "2026-01-05", "--period-end", "2026-01-01"]) == 2
+    assert "later than --date" in capsys.readouterr().err
+
+    assert main(base + ["--period-end", "2026-01-06"]) == 2
+    assert "requires --date" in capsys.readouterr().err
+
+    conn = _db(root)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 0
+    finally:
+        conn.close()
