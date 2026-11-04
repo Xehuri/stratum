@@ -20,6 +20,7 @@ import tempfile
 import tomllib
 import uuid
 from dataclasses import dataclass, field, replace
+from datetime import date
 from pathlib import Path
 
 from .db import SCHEMA_VERSION, open_db
@@ -602,6 +603,77 @@ def relocate_workspace(
 # ---------------------------------------------------------------------------
 
 
+def status_date_text(
+    conn: sqlite3.Connection, workspace: Workspace, day: str
+) -> str:
+    """Render block coverage for documents whose relative path contains ``day``."""
+    try:
+        date.fromisoformat(day)
+    except ValueError as exc:
+        raise WorkspaceError(
+            f"--date must be YYYY-MM-DD, got {day!r}"
+        ) from exc
+
+    rows = conn.execute(
+        """
+        SELECT d.path,
+               COUNT(b.id) AS blocks,
+               COALESCE(SUM(CASE WHEN b.status = 'active' THEN 1 ELSE 0 END), 0)
+                   AS active,
+               COALESCE(SUM(CASE WHEN b.status = 'stale' THEN 1 ELSE 0 END), 0)
+                   AS stale,
+               COALESCE(SUM(CASE WHEN b.status = 'missing' THEN 1 ELSE 0 END), 0)
+                   AS missing
+        FROM documents d
+        LEFT JOIN blocks b ON b.document_id = d.id
+        WHERE instr(d.path, ?) > 0
+        GROUP BY d.path
+        ORDER BY d.path
+        """,
+        (day,),
+    ).fetchall()
+
+    total_active = sum(int(row["active"]) for row in rows)
+    total_stale = sum(int(row["stale"]) for row in rows)
+    total_missing = sum(int(row["missing"]) for row in rows)
+    empty_docs = sum(1 for row in rows if int(row["blocks"]) == 0)
+
+    reasons: list[str] = []
+    if not rows:
+        reasons.append(f"no documents contain {day}")
+    else:
+        if empty_docs:
+            reasons.append(f"{empty_docs} document(s) have no blocks")
+        if total_stale:
+            reasons.append(f"{total_stale} stale block(s)")
+        if total_missing:
+            reasons.append(f"{total_missing} missing block(s)")
+
+    complete = bool(rows) and not reasons
+    lines = [
+        "Stratum status",
+        f"Workspace: {workspace.name}",
+        f"Date: {day}",
+        f"Documents: {len(rows)}",
+        f"Blocks: active {total_active}, stale {total_stale}, "
+        f"missing {total_missing}",
+        "Coverage: complete" if complete else "Coverage: incomplete",
+    ]
+    if reasons:
+        lines.append(f"Reason: {'; '.join(reasons)}")
+    lines.append("")
+    lines.append(f"Documents on {day}:")
+    if not rows:
+        lines.append("  none")
+    for row in rows:
+        lines.append(
+            f"  {row['path']}  blocks {row['blocks']} "
+            f"(active {row['active']}, stale {row['stale']}, "
+            f"missing {row['missing']})"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def status_text(conn: sqlite3.Connection, workspace: Workspace) -> str:
     counts = {
         table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -623,7 +695,7 @@ def status_text(conn: sqlite3.Connection, workspace: Workspace) -> str:
     if head is None:
         lines.append("HEAD: none")
     else:
-        lines.append(f"HEAD: {head['id'][:7]}  {head['created_at']}")
+        lines.append(f"HEAD: {head['id']}  {head['created_at']}")
         lines.append(f"Author: {head['author']}")
         lines.append(f"Message: {head['message']}")
 

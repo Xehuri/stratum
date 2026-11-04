@@ -49,6 +49,7 @@ from .workspace import (
     relocate_workspace,
     remove_workspace,
     resolve_workspace,
+    status_date_text,
     status_text,
 )
 
@@ -138,6 +139,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser.add_argument(
         "--short", action="store_true", help="reserved for compact output"
+    )
+    status_parser.add_argument(
+        "--date", metavar="DATE", help="show block coverage for YYYY-MM-DD"
     )
 
     ingest_parser = subparsers.add_parser(
@@ -535,7 +539,10 @@ def _handle_status(args: argparse.Namespace) -> int:
 
     conn = open_db(workspace.db_path)
     try:
-        sys.stdout.write(status_text(conn, workspace))
+        if args.date is not None:
+            sys.stdout.write(status_date_text(conn, workspace, args.date))
+        else:
+            sys.stdout.write(status_text(conn, workspace))
     finally:
         conn.close()
     return EXIT_OK
