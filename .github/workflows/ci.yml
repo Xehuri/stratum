@@ -37,3 +37,30 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  release-smoke:
+    name: Clean wheel install and demo
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+      - name: Install wheel in a clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/stratum-clean"
+          "$RUNNER_TEMP/stratum-clean/bin/python" -m pip install --no-deps dist/*.whl
+      - name: Run demo outside the checkout
+        run: |
+          mkdir -p "$RUNNER_TEMP/outside"
+          cd "$RUNNER_TEMP/outside"
+          "$RUNNER_TEMP/stratum-clean/bin/stratum" --version
+          "$RUNNER_TEMP/stratum-clean/bin/stratum" demo
+          test -z "$(ls -A "$RUNNER_TEMP/outside")"
