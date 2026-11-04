@@ -383,6 +383,83 @@ def test_report_card_relations_preserve_relation_roles(
         conn.close()
 
 
+@pytest.mark.parametrize("reports_event_first", [False, True])
+def test_reports_event_wins_over_observes_for_same_card(
+    tmp_path, monkeypatch, capsys, reports_event_first
+):
+    root = _init_workspace(tmp_path, monkeypatch)
+    index = _copy_index(tmp_path)
+
+    def add_relations(rows):
+        rows[:] = [
+            row
+            for row in rows
+            if row.get("to_card") != "C-20260101-0001"
+        ]
+        observes = {
+            "from_report": "D-20260101",
+            "relation": "observes",
+            "note": "synthetic card link",
+            "to_card": "C-20260101-0001",
+        }
+        reports_event = {
+            "from_report": "D-20260101",
+            "relation": "reports_event",
+            "note": "synthetic event link",
+            "to_card": "C-20260101-0001",
+        }
+        if reports_event_first:
+            rows.extend([reports_event, observes])
+        else:
+            rows.extend([observes, reports_event])
+
+    _mutate_jsonl(index / "report_relations.jsonl", add_relations)
+
+    assert main(["migrate-legacy", "--index", str(index)]) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        roles = {
+            row["card_id"]: row["role"]
+            for row in conn.execute(
+                "SELECT card_id, role FROM report_cards "
+                "WHERE report_id = 'D-20260101'"
+            )
+        }
+        assert roles == {
+            "C-20260101-0001": "reports_event",
+            "C-20260101-0002": "reference",
+        }
+        assert _count(conn, "report_cards") == 2
+        run = conn.execute("SELECT stats_json FROM import_runs").fetchone()
+        assert json.loads(run["stats_json"])["counts"]["report_cards"] == 2
+    finally:
+        conn.close()
+
+
+def test_observes_only_keeps_reference_role(tmp_path, monkeypatch, capsys):
+    root = _init_workspace(tmp_path, monkeypatch)
+    assert main(["migrate-legacy", "--index", str(FIXTURE_INDEX)]) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        roles = {
+            row["card_id"]: row["role"]
+            for row in conn.execute(
+                "SELECT card_id, role FROM report_cards"
+            )
+        }
+        assert roles == {
+            "C-20260101-0001": "reference",
+            "C-20260101-0002": "reference",
+        }
+        assert _count(conn, "report_cards") == 2
+    finally:
+        conn.close()
+
+
 def test_reimport_same_index_is_unchanged(tmp_path, monkeypatch, capsys):
     root = _init_workspace(tmp_path, monkeypatch)
     assert main(["migrate-legacy", "--index", str(FIXTURE_INDEX)]) == 0
