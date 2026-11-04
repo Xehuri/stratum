@@ -1,0 +1,2 @@
+{"concept_id": "EVENT", "name": "事件", "kind": "event", "parent_id": null, "level": 1, "definition": "某个时间发生的事", "includes": [], "excludes": [], "required_slots": [], "aliases": [], "status": "active", "version": 1, "owner": "test"}
+{"concept_id": "FINDING", "name": "发现", "kind": "finding", "parent_id": "EVENT", "level": 2, "definition": "从事件推导的结论", "includes": [], "excludes": [], "required_slots": [], "aliases": [], "status": "active", "version": 1, "owner": "test"}

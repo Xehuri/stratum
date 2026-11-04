@@ -12,7 +12,6 @@ from stratum.migrations import SUPPORTED_SCHEMA_VERSION
 
 UNIMPLEMENTED = [
     "lint",
-    "migrate-legacy",
     "demo",
 ]
 

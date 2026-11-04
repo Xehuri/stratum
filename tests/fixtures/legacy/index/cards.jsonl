@@ -1,0 +1,2 @@
+{"card_id": "C-20260101-0001", "kind": "event", "title": "合成事件", "statement": "上午完成合成任务。", "date": "2026-01-01", "time": "09:00", "end_time": "10:00", "slots": {"who": "H1", "topic": "synthetic"}, "confidence": "high", "status": "active", "version": 1}
+{"card_id": "C-20260101-0002", "kind": "finding", "title": "合成发现", "statement": "合成材料显示一个模式。", "period_start": "2026-01-01", "period_end": "2026-01-03", "slots": {"topic": "synthetic", "sessions": 2}, "confidence": "medium", "status": "active", "version": 2}
