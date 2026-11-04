@@ -4,15 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from stratum.cli import main
 from stratum.db import open_db
 from stratum.migrations import SUPPORTED_SCHEMA_VERSION
-
-UNIMPLEMENTED = [
-    "lint",
-]
 
 
 def test_help_lists_commands(capsys):
@@ -23,6 +17,7 @@ def test_help_lists_commands(capsys):
         "init",
         "workspace",
         "status",
+        "lint",
         "ingest",
         "review",
         "query",
@@ -52,14 +47,6 @@ def test_init_requires_root(capsys):
     assert main(["init"]) == 2
     err = capsys.readouterr().err
     assert "--root" in err
-
-
-@pytest.mark.parametrize("command", UNIMPLEMENTED)
-def test_unimplemented_commands_exit_two(command, capsys):
-    assert main([command]) == 2
-    err = capsys.readouterr().err
-    assert command in err
-    assert "not implemented" in err.lower()
 
 
 def test_status_without_workspace_exits_two(tmp_path, monkeypatch, capsys):

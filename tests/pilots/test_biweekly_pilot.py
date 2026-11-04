@@ -30,6 +30,9 @@ WEEKLY_IDS = (
     "OBS-W-2026-03-02-01",
     "OBS-W-2026-03-02-02",
     "OBS-W-2026-03-09-01",
+    "OBS-W-2026-03-02-03",
+    "OBS-W-2026-03-09-02",
+    "OBS-W-2026-03-09-03",
 )
 
 
@@ -213,14 +216,25 @@ def test_biweekly_pilot_end_to_end(tmp_path, monkeypatch):
                 f"- derived_from: {DAILY_IDS[1]}\n"
                 f"- evidence: {evidence_card.card_id}\n"
                 "- confidence: low\n"
-                "- body: Synthetic week one observation B.\n"
+                "- body: Synthetic week one observation B.\n\n"
+                f"### {WEEKLY_IDS[3]} Synthetic week one observation C\n"
+                f"- claim_id: {WEEKLY_IDS[3]}\n"
+                "- claim_type: observation\n"
+                f"- period_start: {WEEK_ONE_START}\n"
+                f"- period_end: {WEEK_ONE_END}\n"
+                "- granularity: week\n"
+                "- entities: synthetic-reader\n"
+                f"- derived_from: {DAILY_IDS[0]}\n"
+                f"- evidence: {evidence_card.card_id}\n"
+                "- confidence: medium\n"
+                "- body: Synthetic week one observation C.\n"
             ),
         ),
     )
     assert (
         ingest_report_file(week_one_path, workspace=workspace.workspace_id)
         .claims_created
-        == 2
+        == 3
     )
 
     week_two_path = _write(
@@ -240,14 +254,36 @@ def test_biweekly_pilot_end_to_end(tmp_path, monkeypatch):
                 f"- derived_from: {DAILY_IDS[2]}\n"
                 f"- evidence: {evidence_card.card_id}\n"
                 "- confidence: medium\n"
-                "- body: Synthetic week two observation.\n"
+                "- body: Synthetic week two observation A.\n\n"
+                f"### {WEEKLY_IDS[4]} Synthetic week two observation B\n"
+                f"- claim_id: {WEEKLY_IDS[4]}\n"
+                "- claim_type: observation\n"
+                f"- period_start: {WEEK_TWO_START}\n"
+                f"- period_end: {WEEK_TWO_END}\n"
+                "- granularity: week\n"
+                "- entities: synthetic-reader\n"
+                f"- derived_from: {DAILY_IDS[3]}\n"
+                f"- evidence: {evidence_card.card_id}\n"
+                "- confidence: low\n"
+                "- body: Synthetic week two observation B.\n\n"
+                f"### {WEEKLY_IDS[5]} Synthetic week two observation C\n"
+                f"- claim_id: {WEEKLY_IDS[5]}\n"
+                "- claim_type: observation\n"
+                f"- period_start: {WEEK_TWO_START}\n"
+                f"- period_end: {WEEK_TWO_END}\n"
+                "- granularity: week\n"
+                "- entities: synthetic-reader\n"
+                f"- derived_from: {DAILY_IDS[2]}\n"
+                f"- evidence: {evidence_card.card_id}\n"
+                "- confidence: medium\n"
+                "- body: Synthetic week two observation C.\n"
             ),
         ),
     )
     assert (
         ingest_report_file(week_two_path, workspace=workspace.workspace_id)
         .claims_created
-        == 1
+        == 3
     )
 
     conn = open_db(workspace.db_path)

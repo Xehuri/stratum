@@ -660,22 +660,38 @@ def test_report_weekly_derives_from_daily_claims(tmp_path, monkeypatch, capsys):
     finally:
         conn.close()
 
-    weekly_claim = _observation(
-        "OBS-W-2026-01-05-01",
-        [card_id],
-        granularity="week",
-        period_end="2026-01-12",
-        derived_from=["OBS-D-2026-01-05-01", "CHG-D-2026-01-05-01"],
-    )
+    weekly_claims = [
+        _observation(
+            "OBS-W-2026-01-05-01",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["OBS-D-2026-01-05-01", "CHG-D-2026-01-05-01"],
+        ),
+        _observation(
+            "OBS-W-2026-01-05-02",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["OBS-D-2026-01-05-01"],
+        ),
+        _observation(
+            "OBS-W-2026-01-05-03",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["CHG-D-2026-01-05-01"],
+        ),
+    ]
     path = _write(
         root,
         "reports/weekly/2026-01-05.md",
-        _document(WEEKLY_FM, [weekly_claim]),
+        _document(WEEKLY_FM, weekly_claims),
     )
 
     assert main(["ingest", "report", str(path)]) == 0
     out = capsys.readouterr().out
-    assert "Relations: 2" in out
+    assert "Relations: 4" in out
 
     conn = _db(root)
     try:
@@ -683,6 +699,8 @@ def test_report_weekly_derives_from_daily_claims(tmp_path, monkeypatch, capsys):
             "SELECT * FROM claim_relations ORDER BY to_claim_id"
         ).fetchall()
         assert [row["relation_type"] for row in relations] == [
+            "derived_from",
+            "derived_from",
             "derived_from",
             "derived_from",
         ]
@@ -707,17 +725,33 @@ def test_report_weekly_rejects_out_of_period_derived_from(
     finally:
         conn.close()
 
-    weekly_claim = _observation(
-        "OBS-W-2026-01-05-01",
-        [card_id],
-        granularity="week",
-        period_end="2026-01-12",
-        derived_from=["OBS-D-2026-01-13-01"],
-    )
+    weekly_claims = [
+        _observation(
+            "OBS-W-2026-01-05-01",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["OBS-D-2026-01-13-01"],
+        ),
+        _observation(
+            "OBS-W-2026-01-05-02",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["OBS-D-2026-01-13-01"],
+        ),
+        _observation(
+            "OBS-W-2026-01-05-03",
+            [card_id],
+            granularity="week",
+            period_end="2026-01-12",
+            derived_from=["OBS-D-2026-01-13-01"],
+        ),
+    ]
     path = _write(
         root,
         "reports/weekly/2026-01-05.md",
-        _document(WEEKLY_FM, [weekly_claim]),
+        _document(WEEKLY_FM, weekly_claims),
     )
 
     assert main(["ingest", "report", str(path)]) == 1
@@ -754,11 +788,15 @@ def test_report_biweekly_derives_from_weekly_observation(
     finally:
         conn.close()
 
-    pattern = _pattern("PAT-B-2026-01-05-01", ["OBS-W-2026-01-05-01"], [card_id])
+    patterns = [
+        _pattern("PAT-B-2026-01-05-01", ["OBS-W-2026-01-05-01"], [card_id]),
+        _pattern("PAT-B-2026-01-05-02", ["OBS-W-2026-01-05-01"], [card_id]),
+        _pattern("PAT-B-2026-01-05-03", ["OBS-W-2026-01-05-01"], [card_id]),
+    ]
     path = _write(
         root,
         "reports/biweekly/2026-01-05.md",
-        _document(BIWEEKLY_FM, [pattern]),
+        _document(BIWEEKLY_FM, patterns),
     )
 
     assert main(["ingest", "report", str(path)]) == 0
@@ -783,11 +821,15 @@ def test_report_biweekly_rejects_derived_from_daily(
     finally:
         conn.close()
 
-    pattern = _pattern("PAT-B-2026-01-05-01", ["OBS-D-2026-01-05-01"], [card_id])
+    patterns = [
+        _pattern("PAT-B-2026-01-05-01", ["OBS-D-2026-01-05-01"], [card_id]),
+        _pattern("PAT-B-2026-01-05-02", ["OBS-D-2026-01-05-01"], [card_id]),
+        _pattern("PAT-B-2026-01-05-03", ["OBS-D-2026-01-05-01"], [card_id]),
+    ]
     path = _write(
         root,
         "reports/biweekly/2026-01-05.md",
-        _document(BIWEEKLY_FM, [pattern]),
+        _document(BIWEEKLY_FM, patterns),
     )
 
     assert main(["ingest", "report", str(path)]) == 1
@@ -822,10 +864,11 @@ def test_report_cycle_detected(tmp_path, monkeypatch, capsys):
         [card_id],
         supersedes=["PAT-B-2026-01-05-01"],
     )
+    third = _pattern("PAT-B-2026-01-05-03", ["OBS-W-2026-01-05-01"], [card_id])
     path = _write(
         root,
         "reports/biweekly/2026-01-05.md",
-        _document(BIWEEKLY_FM, [first, second]),
+        _document(BIWEEKLY_FM, [first, second, third]),
     )
 
     assert main(["ingest", "report", str(path)]) == 1
@@ -854,10 +897,14 @@ def test_report_self_reference_detected(tmp_path, monkeypatch, capsys):
         ["PAT-B-2026-01-05-01"],
         [card_id],
     )
+    extras = [
+        _pattern("PAT-B-2026-01-05-02", ["OBS-W-2026-01-05-01"], [card_id]),
+        _pattern("PAT-B-2026-01-05-03", ["OBS-W-2026-01-05-01"], [card_id]),
+    ]
     path = _write(
         root,
         "reports/biweekly/2026-01-05.md",
-        _document(BIWEEKLY_FM, [pattern]),
+        _document(BIWEEKLY_FM, [pattern, *extras]),
     )
 
     assert main(["ingest", "report", str(path)]) == 1

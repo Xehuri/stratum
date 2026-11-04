@@ -44,6 +44,7 @@ from .ingest_source import (
 )
 from .markdown import ScannedDocument, normalize_text, scan_document
 from .migrations import utcnow
+from .report_rules import enforce_claim_counts
 from .workspace import Workspace, resolve_workspace
 
 __all__ = [
@@ -691,6 +692,7 @@ def ingest_report_file(
     file_path, relative_path = resolve_workspace_file(selected, path)
     text = normalize_text(file_path.read_bytes())
     parsed = parse_report(text, source_name=relative_path)
+    enforce_claim_counts(parsed)
 
     conn = open_db(selected.db_path)
     try:

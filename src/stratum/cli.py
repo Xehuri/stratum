@@ -30,6 +30,7 @@ from .ingest_report import ingest_report_file
 from .ingest_source import ingest_source_file
 from .legacy import COUNT_ORDER as LEGACY_COUNT_ORDER
 from .legacy import import_legacy_index
+from .lint import format_lint, lint_file
 from .query import format_query_rows, query_items
 from .review import (
     ALL_ENTITY_STATUSES,
@@ -58,9 +59,7 @@ EXIT_BUSINESS_FAILURE = 1
 EXIT_USAGE = 2
 EXIT_INCOMPLETE = 3
 
-UNIMPLEMENTED_COMMANDS = (
-    "lint",
-)
+UNIMPLEMENTED_COMMANDS = ()
 
 
 class _UsageError(Exception):
@@ -142,6 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser.add_argument(
         "--date", metavar="DATE", help="show block coverage for YYYY-MM-DD"
+    )
+
+    lint_parser = subparsers.add_parser(
+        "lint", help="validate one Loom v1 report without writing data"
+    )
+    lint_parser.add_argument("path", metavar="PATH")
+    lint_parser.add_argument(
+        "--profile",
+        choices=("loom-daily", "loom-weekly", "loom-biweekly"),
+        help="expected report profile",
     )
 
     ingest_parser = subparsers.add_parser(
@@ -343,7 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo_parser.add_argument(
         "--root",
         metavar="PATH",
-        help="demo directory (default: ./demo)",
+        help="demo directory (default: packaged demo_data)",
     )
     demo_parser.add_argument(
         "--keep",
@@ -546,6 +555,12 @@ def _handle_status(args: argparse.Namespace) -> int:
     finally:
         conn.close()
     return EXIT_OK
+
+
+def _handle_lint(args: argparse.Namespace) -> int:
+    result = lint_file(args.path, profile=args.profile)
+    sys.stdout.write(format_lint(result))
+    return EXIT_OK if result.ready else EXIT_BUSINESS_FAILURE
 
 
 def _one_line(text: str) -> str:
@@ -841,6 +856,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_workspace(args)
     if args.command == "status":
         return _handle_status(args)
+    if args.command == "lint":
+        return _handle_lint(args)
     if args.command == "ingest":
         return _handle_ingest(args)
     if args.command == "add":

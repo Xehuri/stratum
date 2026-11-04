@@ -562,6 +562,18 @@ Synthetic golden week one narrative.
 - confidence: low
 - body: Synthetic week one observation B.
 
+### OBS-W-2026-03-02-03 Synthetic week one C
+- claim_id: OBS-W-2026-03-02-03
+- claim_type: observation
+- period_start: 2026-03-02
+- period_end: 2026-03-09
+- granularity: week
+- entities: synthetic-reader
+- derived_from: {daily_ids[0]}
+- evidence: {evidence.card_id}
+- confidence: medium
+- body: Synthetic week one observation C.
+
 ## 运维
 
 - 命令: stratum status
@@ -601,6 +613,30 @@ Synthetic golden week two narrative.
 - confidence: medium
 - body: Synthetic week two observation.
 
+### OBS-W-2026-03-09-02 Synthetic week two B
+- claim_id: OBS-W-2026-03-09-02
+- claim_type: observation
+- period_start: 2026-03-09
+- period_end: 2026-03-16
+- granularity: week
+- entities: synthetic-reader
+- derived_from: {daily_ids[2]}
+- evidence: {evidence.card_id}
+- confidence: low
+- body: Synthetic week two observation B.
+
+### OBS-W-2026-03-09-03 Synthetic week two C
+- claim_id: OBS-W-2026-03-09-03
+- claim_type: observation
+- period_start: 2026-03-09
+- period_end: 2026-03-16
+- granularity: week
+- entities: synthetic-reader
+- derived_from: {daily_ids[3]}
+- evidence: {evidence.card_id}
+- confidence: medium
+- body: Synthetic week two observation C.
+
 ## 运维
 
 - 命令: stratum status
@@ -613,7 +649,10 @@ Synthetic golden week two narrative.
         for claim_id in (
             "OBS-W-2026-03-02-01",
             "OBS-W-2026-03-02-02",
+            "OBS-W-2026-03-02-03",
             "OBS-W-2026-03-09-01",
+            "OBS-W-2026-03-09-02",
+            "OBS-W-2026-03-09-03",
         ):
             promote(conn, claim_id, author="04-weekly-review", reason="golden")
     finally:
