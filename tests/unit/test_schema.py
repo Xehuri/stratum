@@ -37,6 +37,7 @@ INDEX_TABLES = {
     "report_cards",
     "report_relations",
 }
+CLAIM_TABLES = {"claims", "claim_relations"}
 OBSERVATION_TABLES = {
     "series",
     "metric_points",
@@ -56,6 +57,7 @@ ALL_TABLES = (
     META_TABLES
     | CONTENT_TABLES
     | INDEX_TABLES
+    | CLAIM_TABLES
     | OBSERVATION_TABLES
     | HISTORY_TABLES
     | OPS_TABLES
@@ -82,14 +84,18 @@ def test_schema_v1_contains_all_table_groups(tmp_path):
         conn.close()
 
 
-def test_schema_migrations_records_version_one(tmp_path):
+def test_schema_migrations_records_all_versions(tmp_path):
     conn = open_db(tmp_path / "schema.db")
     try:
         rows = conn.execute(
             "SELECT version, applied_at FROM schema_migrations ORDER BY version"
         ).fetchall()
-        assert [row[0] for row in rows] == [1]
-        assert rows[0][1]
+        from stratum.migrations import SUPPORTED_SCHEMA_VERSION
+
+        assert [row[0] for row in rows] == list(
+            range(1, SUPPORTED_SCHEMA_VERSION + 1)
+        )
+        assert all(row[1] for row in rows)
     finally:
         conn.close()
 

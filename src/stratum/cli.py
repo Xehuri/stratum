@@ -13,7 +13,11 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .add import add_card, add_claim
 from .db import open_db
+from .errors import StratumError
+from .ingest_report import ingest_report_file
+from .ingest_source import ingest_source_file
 from .workspace import (
     WorkspaceError,
     add_workspace,
@@ -32,7 +36,6 @@ EXIT_USAGE = 2
 EXIT_INCOMPLETE = 3
 
 UNIMPLEMENTED_COMMANDS = (
-    "ingest",
     "lint",
     "query",
     "commit",
@@ -123,6 +126,73 @@ def build_parser() -> argparse.ArgumentParser:
         "--short", action="store_true", help="reserved for compact output"
     )
 
+    ingest_parser = subparsers.add_parser(
+        "ingest", help="index source documents and contract reports"
+    )
+    ingest_sub = ingest_parser.add_subparsers(
+        dest="ingest_command", metavar="ACTION"
+    )
+
+    source_parser = ingest_sub.add_parser(
+        "source", help="index one Markdown source file"
+    )
+    source_parser.add_argument("path", metavar="PATH")
+    source_parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="override the resolved segmentation profile",
+    )
+
+    report_parser = ingest_sub.add_parser(
+        "report", help="parse and index one Loom v1 report"
+    )
+    report_parser.add_argument("path", metavar="PATH")
+
+    add_parser = subparsers.add_parser(
+        "add", help="create draft cards and claims from text"
+    )
+    add_sub = add_parser.add_subparsers(dest="add_command", metavar="ACTION")
+
+    card_parser = add_sub.add_parser("card", help="create a draft card")
+    card_parser.add_argument(
+        "--block",
+        action="append",
+        required=True,
+        metavar="BLOCK",
+        help="structured block used as evidence (repeatable)",
+    )
+    card_parser.add_argument(
+        "--type", required=True, dest="card_type", metavar="TYPE"
+    )
+    card_parser.add_argument("--body", required=True, metavar="TEXT")
+    card_parser.add_argument("--title", metavar="TEXT")
+    card_parser.add_argument("--author", metavar="NAME")
+
+    claim_parser = add_sub.add_parser("claim", help="create a draft claim")
+    claim_parser.add_argument("--claim-id", required=True, metavar="CLAIM_ID")
+    claim_parser.add_argument("--claim-type", required=True, metavar="TYPE")
+    claim_parser.add_argument("--period-start", required=True, metavar="DATE")
+    claim_parser.add_argument("--period-end", required=True, metavar="DATE")
+    claim_parser.add_argument("--granularity", required=True, metavar="VALUE")
+    claim_parser.add_argument(
+        "--entity",
+        action="append",
+        required=True,
+        metavar="ENTITY",
+        help="entity name (repeatable)",
+    )
+    claim_parser.add_argument(
+        "--evidence",
+        action="append",
+        required=True,
+        metavar="REF",
+        help="card, block or snapshot reference (repeatable)",
+    )
+    claim_parser.add_argument("--confidence", required=True, metavar="LEVEL")
+    claim_parser.add_argument("--body", required=True, metavar="TEXT")
+    claim_parser.add_argument("--report-id", metavar="REPORT_ID")
+    claim_parser.add_argument("--author", metavar="NAME")
+
     for command in UNIMPLEMENTED_COMMANDS:
         command_parser = subparsers.add_parser(
             command, help="reserved for a later work wave"
@@ -201,6 +271,106 @@ def _handle_workspace(args: argparse.Namespace) -> int:
     return EXIT_USAGE
 
 
+def _handle_ingest(args: argparse.Namespace) -> int:
+    action = args.ingest_command
+    if action is None:
+        print(
+            "stratum: error: ingest requires an action (source, report)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if action == "source":
+        result = ingest_source_file(
+            args.path, profile_name=args.profile, workspace=args.workspace
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Ingested source: {result.path}")
+        _print(f"Document: {result.document_id}")
+        _print(f"Version: {result.version}")
+        _print(f"Profile: {result.profile_name}")
+        _print(
+            f"Blocks: created {result.created}, kept {result.kept}, "
+            f"updated {result.updated}, missing {result.missing}, "
+            f"lineage {result.lineage}"
+        )
+        return EXIT_OK
+    if action == "report":
+        result = ingest_report_file(
+            args.path, workspace=args.workspace
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Ingested report: {result.report_id}")
+        _print(f"Type: {result.report_type}")
+        _print(f"Status: {result.status}")
+        _print(
+            f"Claims: created {result.claims_created}, "
+            f"updated {result.claims_updated}, "
+            f"rejected {result.claims_rejected}"
+        )
+        _print(f"Evidence: {result.evidence_count}")
+        _print(f"Relations: {result.relations}")
+        if result.document is not None:
+            _print(
+                f"Document: {result.document.path} "
+                f"version {result.document.version}"
+            )
+        return EXIT_OK
+    print(f"stratum: error: unknown ingest action: {action}", file=sys.stderr)
+    return EXIT_USAGE
+
+
+def _handle_add(args: argparse.Namespace) -> int:
+    action = args.add_command
+    if action is None:
+        print(
+            "stratum: error: add requires an action (card, claim)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if action == "card":
+        result = add_card(
+            blocks=list(args.block),
+            card_type=args.card_type,
+            body=args.body,
+            title=args.title,
+            author=args.author,
+            workspace=args.workspace,
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Added card: {result.card_id}")
+        _print(f"Blocks: {len(result.block_ids)}")
+        return EXIT_OK
+    if action == "claim":
+        result = add_claim(
+            claim_id=args.claim_id,
+            claim_type=args.claim_type,
+            period_start=args.period_start,
+            period_end=args.period_end,
+            granularity=args.granularity,
+            entities=list(args.entity),
+            evidence=list(args.evidence),
+            confidence=args.confidence,
+            body=args.body,
+            report_id=args.report_id,
+            author=args.author,
+            workspace=args.workspace,
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Added claim: {result.claim_id}")
+        _print(f"Evidence: {result.evidence_count}")
+        return EXIT_OK
+    print(f"stratum: error: unknown add action: {action}", file=sys.stderr)
+    return EXIT_USAGE
+
+
 def _handle_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(explicit=args.workspace)
     database = Path(workspace.db_path)
@@ -228,6 +398,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_workspace(args)
     if args.command == "status":
         return _handle_status(args)
+    if args.command == "ingest":
+        return _handle_ingest(args)
+    if args.command == "add":
+        return _handle_add(args)
     if args.command in UNIMPLEMENTED_COMMANDS:
         print(
             f"stratum: error: '{args.command}' is not implemented yet; "
@@ -255,6 +429,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return _dispatch(args)
+    except StratumError as exc:
+        print(f"stratum: error: {exc}", file=sys.stderr)
+        return exc.exit_code
     except WorkspaceError as exc:
         print(f"stratum: error: {exc}", file=sys.stderr)
         return EXIT_USAGE

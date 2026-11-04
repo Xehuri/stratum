@@ -29,16 +29,25 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
-def _load_schema_v1() -> str:
+def _load_schema(filename: str) -> str:
     return (
         resources.files("stratum")
-        .joinpath("schema.sql")
+        .joinpath(filename)
         .read_text(encoding="utf-8")
     )
 
 
+def _load_schema_v1() -> str:
+    return _load_schema("schema.sql")
+
+
+def _load_schema_v2() -> str:
+    return _load_schema("schema_v2.sql")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, name="create_schema_v1", sql=_load_schema_v1()),
+    Migration(version=2, name="add_claims", sql=_load_schema_v2()),
 )
 
 SUPPORTED_SCHEMA_VERSION = MIGRATIONS[-1].version

@@ -8,7 +8,7 @@ from stratum import migrations
 from stratum.db import open_db
 
 
-def test_open_db_applies_v1_exactly_once(tmp_path):
+def test_open_db_applies_current_schema_exactly_once(tmp_path):
     path = tmp_path / "migrate.db"
 
     conn = open_db(path)
@@ -21,7 +21,9 @@ def test_open_db_applies_v1_exactly_once(tmp_path):
                 "SELECT version FROM schema_migrations ORDER BY version"
             )
         ]
-        assert versions == [1]
+        assert versions == list(
+            range(1, migrations.SUPPORTED_SCHEMA_VERSION + 1)
+        )
         assert conn.execute(
             "SELECT applied_at FROM schema_migrations WHERE version = 1"
         ).fetchone()[0]
@@ -72,11 +74,13 @@ def test_pending_migration_is_applied_and_idempotent(tmp_path, monkeypatch):
                 "SELECT version FROM schema_migrations ORDER BY version"
             )
         ]
-        assert versions == [1, extra.version]
+        assert versions == list(
+            range(1, extra.version + 1)
+        )
 
         migrations.apply_pending(conn)
         count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-        assert count == 2
+        assert count == extra.version
     finally:
         conn.close()
 
@@ -111,7 +115,7 @@ def test_failed_migration_rolls_back(tmp_path, monkeypatch):
                 "SELECT version FROM schema_migrations ORDER BY version"
             )
         ]
-        assert versions == [1]
+        assert versions == list(range(1, broken.version))
     finally:
         conn.close()
 
