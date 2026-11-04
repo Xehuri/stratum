@@ -456,6 +456,7 @@ def _mark_removed_drafts(
             (now, claim_id),
         )
         delete_claim_relations(conn, claim_id)
+        delete_evidence(conn, claim_id)
     return len(removed)
 
 

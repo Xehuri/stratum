@@ -347,7 +347,53 @@ def test_report_revision_updates_draft_and_rejects_removed_claim(
         assert rows["OBS-D-2026-01-05-01"]["status"] == "draft"
         assert rows["OBS-D-2026-01-05-02"]["status"] == "rejected"
         assert _count(conn, "document_versions") == 2
-        assert _count(conn, "evidence_links") == 2
+        assert _count(conn, "evidence_links") == 1
+    finally:
+        conn.close()
+
+
+def test_report_revision_deletes_removed_draft_evidence(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        first_card = _seed_card(conn, "C-TEST-0001")
+        second_card = _seed_card(conn, "C-TEST-0002")
+    finally:
+        conn.close()
+
+    first = _document(
+        DAILY_FM,
+        [
+            _observation("OBS-D-2026-01-05-01", [first_card], body="Keep."),
+            _observation("OBS-D-2026-01-05-02", [second_card], body="Remove."),
+        ],
+    )
+    path = _write(root, "reports/daily/2026-01-05.md", first)
+    assert main(["ingest", "report", str(path)]) == 0
+    capsys.readouterr()
+
+    revised = _document(
+        DAILY_FM,
+        [_observation("OBS-D-2026-01-05-01", [first_card], body="Keep.")],
+    )
+    path.write_text(revised, encoding="utf-8")
+    assert main(["ingest", "report", str(path)]) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        removed = conn.execute(
+            "SELECT * FROM claims WHERE id = 'OBS-D-2026-01-05-02'"
+        ).fetchone()
+        assert removed["status"] == "rejected"
+        links = conn.execute(
+            "SELECT owner_id, target_id FROM evidence_links ORDER BY owner_id"
+        ).fetchall()
+        assert [(row["owner_id"], row["target_id"]) for row in links] == [
+            ("OBS-D-2026-01-05-01", first_card)
+        ]
     finally:
         conn.close()
 

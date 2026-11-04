@@ -425,7 +425,6 @@ def draft_from_fields(
         "period_start",
         "period_end",
         "granularity",
-        "entities",
         "confidence",
         "body",
     )

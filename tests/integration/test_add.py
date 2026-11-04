@@ -236,6 +236,27 @@ def test_add_claim_creates_draft_with_evidence(tmp_path, monkeypatch, capsys):
         conn.close()
 
 
+def test_add_claim_accepts_repeated_entities(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        card_id = _seed_card(conn)
+    finally:
+        conn.close()
+
+    args = _claim_args(card_id)
+    entity_index = args.index("--entity")
+    args[entity_index + 2:entity_index + 2] = ["--entity", "other"]
+    assert main(args) == 0
+
+    conn = _db(root)
+    try:
+        claim = conn.execute("SELECT * FROM claims").fetchone()
+        assert claim["entities_json"] == '["self","other"]'
+    finally:
+        conn.close()
+
+
 def test_add_claim_is_idempotent_and_updates_drafts(tmp_path, monkeypatch, capsys):
     root = _init(tmp_path, monkeypatch)
     conn = _db(root)

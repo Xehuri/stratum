@@ -49,6 +49,11 @@ def test_valid_observation_draft() -> None:
     assert draft.content_sha256 == fingerprint_fields(_base())
 
 
+def test_repeated_entities_are_preserved() -> None:
+    draft = draft_from_fields(_base(entities=("self", "other")))
+    assert draft.entities == ("self", "other")
+
+
 def test_missing_required_field() -> None:
     with pytest.raises(ValidationError) as exc:
         draft_from_fields(_base(body=None))
