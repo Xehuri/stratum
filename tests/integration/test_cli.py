@@ -12,11 +12,6 @@ from stratum.migrations import SUPPORTED_SCHEMA_VERSION
 
 UNIMPLEMENTED = [
     "lint",
-    "commit",
-    "log",
-    "diff",
-    "restore",
-    "fsck",
     "migrate-legacy",
     "demo",
 ]
@@ -26,7 +21,19 @@ def test_help_lists_commands(capsys):
     assert main(["--help"]) == 0
     out = capsys.readouterr().out
     assert "usage:" in out.lower()
-    for command in ("init", "workspace", "status", "ingest", "review", "query"):
+    for command in (
+        "init",
+        "workspace",
+        "status",
+        "ingest",
+        "review",
+        "query",
+        "commit",
+        "log",
+        "diff",
+        "restore",
+        "fsck",
+    ):
         assert command in out
 
 

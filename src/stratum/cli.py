@@ -17,6 +17,14 @@ from .add import add_card, add_claim
 from .claims import CLAIM_TYPES
 from .db import open_db
 from .errors import StratumError
+from .fsck import format_fsck, run_fsck
+from .history import (
+    commit as history_commit,
+    diff_changes,
+    format_diff,
+    list_commits,
+    restore as history_restore,
+)
 from .ingest_report import ingest_report_file
 from .ingest_source import ingest_source_file
 from .query import format_query_rows, query_items
@@ -48,11 +56,6 @@ EXIT_INCOMPLETE = 3
 
 UNIMPLEMENTED_COMMANDS = (
     "lint",
-    "commit",
-    "log",
-    "diff",
-    "restore",
-    "fsck",
     "migrate-legacy",
     "demo",
 )
@@ -282,6 +285,37 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--include-draft", action="store_true")
     query_parser.add_argument("--limit", type=int, default=50, metavar="N")
     query_parser.add_argument("--context", type=int, default=0, metavar="N")
+
+    commit_parser = subparsers.add_parser(
+        "commit", help="record working index changes as one linear commit"
+    )
+    commit_parser.add_argument("--author", required=True, metavar="NAME")
+    commit_parser.add_argument("--message", required=True, metavar="TEXT")
+
+    log_parser = subparsers.add_parser(
+        "log", help="show linear commit history, newest first"
+    )
+    log_parser.add_argument("--limit", type=int, default=20, metavar="N")
+
+    diff_parser = subparsers.add_parser(
+        "diff", help="compare HEAD with working state or two commits"
+    )
+    diff_parser.add_argument("--from", dest="from_commit", metavar="ID")
+    diff_parser.add_argument("--to", dest="to_commit", metavar="ID")
+
+    restore_parser = subparsers.add_parser(
+        "restore", help="restore index state from a commit as a new commit"
+    )
+    restore_parser.add_argument("commit", metavar="COMMIT")
+    restore_parser.add_argument("--author", required=True, metavar="NAME")
+    restore_parser.add_argument("--reason", required=True, metavar="TEXT")
+
+    fsck_parser = subparsers.add_parser(
+        "fsck", help="run deep integrity checks and safe fixes"
+    )
+    fsck_parser.add_argument(
+        "--fix", action="store_true", help="apply only safe repairs"
+    )
 
     for command in UNIMPLEMENTED_COMMANDS:
         command_parser = subparsers.add_parser(
@@ -668,6 +702,84 @@ def _handle_query(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _handle_commit(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        result = history_commit(
+            conn, author=args.author, message=args.message
+        )
+    finally:
+        conn.close()
+    if result.status == "empty":
+        _print("nothing to commit")
+        return EXIT_OK
+    _print(f"Committed {result.commit_id}")
+    _print(f"Seq: {result.seq}")
+    _print(f"Changes: {result.change_count}")
+    return EXIT_OK
+
+
+def _handle_log(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        commits = list_commits(conn, limit=args.limit)
+    finally:
+        conn.close()
+    for commit in commits:
+        _print(
+            f"{commit.id}  seq {commit.seq}  {commit.created_at}  "
+            f"{commit.author}  {_one_line(commit.message)}  "
+            f"{commit.change_count} changes"
+        )
+    _print(f"{len(commits)} commits")
+    return EXIT_OK
+
+
+def _handle_diff(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        result = diff_changes(
+            conn,
+            from_id=args.from_commit,
+            to_id=args.to_commit,
+        )
+    finally:
+        conn.close()
+    sys.stdout.write(format_diff(result))
+    return EXIT_OK
+
+
+def _handle_restore(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        result = history_restore(
+            conn,
+            args.commit,
+            author=args.author,
+            reason=args.reason,
+        )
+    finally:
+        conn.close()
+    if result.status == "empty":
+        _print("nothing to restore")
+        return EXIT_OK
+    _print(
+        f"Restored {result.target_id} as {result.commit_id} "
+        f"(seq {result.seq}, {result.change_count} changes)"
+    )
+    return EXIT_OK
+
+
+def _handle_fsck(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        result = run_fsck(conn, fix=args.fix)
+    finally:
+        conn.close()
+    sys.stdout.write(format_fsck(result))
+    return EXIT_BUSINESS_FAILURE if result.has_errors else EXIT_OK
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command is None:
         print(
@@ -689,6 +801,16 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_review(args)
     if args.command == "query":
         return _handle_query(args)
+    if args.command == "commit":
+        return _handle_commit(args)
+    if args.command == "log":
+        return _handle_log(args)
+    if args.command == "diff":
+        return _handle_diff(args)
+    if args.command == "restore":
+        return _handle_restore(args)
+    if args.command == "fsck":
+        return _handle_fsck(args)
     if args.command in UNIMPLEMENTED_COMMANDS:
         print(
             f"stratum: error: '{args.command}' is not implemented yet; "
