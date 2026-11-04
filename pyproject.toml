@@ -18,7 +18,7 @@ stratum = "stratum.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-stratum = ["schema.sql", "schema_v2.sql"]
+stratum = ["schema.sql", "schema_v2.sql", "schema_v3.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -38,6 +38,7 @@ INDEX_TABLES = {
     "report_relations",
 }
 CLAIM_TABLES = {"claims", "claim_relations"}
+REVIEW_TABLES = {"review_events"}
 OBSERVATION_TABLES = {
     "series",
     "metric_points",
@@ -58,6 +59,7 @@ ALL_TABLES = (
     | CONTENT_TABLES
     | INDEX_TABLES
     | CLAIM_TABLES
+    | REVIEW_TABLES
     | OBSERVATION_TABLES
     | HISTORY_TABLES
     | OPS_TABLES
@@ -189,5 +191,53 @@ def test_fts5_tables_are_virtual_and_searchable(tmp_path):
             "SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ?", ("tidepool",)
         ).fetchall()
         assert [row[0] for row in hits] == ["BLK-1"]
+    finally:
+        conn.close()
+
+
+def test_schema_v3_review_events_contract(tmp_path):
+    conn = open_db(tmp_path / "schema.db")
+    try:
+        columns = {
+            row[1]: row
+            for row in conn.execute("PRAGMA table_info(review_events)").fetchall()
+        }
+        assert set(columns) == {
+            "id",
+            "entity_type",
+            "entity_id",
+            "action",
+            "from_status",
+            "to_status",
+            "author",
+            "reason",
+            "created_at",
+        }
+        assert columns["id"][5] == 1  # primary key
+        indexes = {
+            row[1]
+            for row in conn.execute("PRAGMA index_list(review_events)").fetchall()
+        }
+        assert "idx_review_events_entity" in indexes
+        assert "idx_review_events_created" in indexes
+
+        conn.execute(
+            """
+            INSERT INTO review_events (
+                entity_type, entity_id, action, from_status, to_status,
+                author, reason
+            ) VALUES ('claim', 'OBS-D-2026-01-05-01', 'promote',
+                      'draft', 'active', 'human', 'checked')
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """
+                INSERT INTO review_events (
+                    entity_type, entity_id, action, from_status, to_status,
+                    author, reason
+                ) VALUES ('report', 'x', 'promote', 'draft', 'active', 'h', 'r')
+                """
+            )
     finally:
         conn.close()
