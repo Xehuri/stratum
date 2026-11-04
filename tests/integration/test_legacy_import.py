@@ -309,6 +309,80 @@ def test_import_counts_legacy_ids_and_relations(tmp_path, monkeypatch, capsys):
         conn.close()
 
 
+def test_report_card_relations_preserve_relation_roles(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init_workspace(tmp_path, monkeypatch)
+    index = _copy_index(tmp_path)
+    _mutate_jsonl(
+        index / "cards.jsonl",
+        lambda rows: rows.append(
+            {
+                "card_id": "C-20260101-0003",
+                "kind": "event",
+                "title": "合成关联事件",
+                "statement": "合成关联材料。",
+                "date": "2026-01-01",
+                "confidence": "high",
+                "status": "active",
+                "version": 1,
+            }
+        ),
+    )
+    _mutate_jsonl(
+        index / "report_relations.jsonl",
+        lambda rows: rows.append(
+            {
+                "from_report": "D-20260101",
+                "relation": "reports_event",
+                "to_card": "C-20260101-0003",
+            }
+        ),
+    )
+
+    assert main(["migrate-legacy", "--index", str(index)]) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        report_cards = conn.execute(
+            "SELECT report_id, card_id, role FROM report_cards "
+            "ORDER BY card_id"
+        ).fetchall()
+        assert [
+            (row["report_id"], row["card_id"], row["role"])
+            for row in report_cards
+        ] == [
+            ("D-20260101", "C-20260101-0001", "reference"),
+            ("D-20260101", "C-20260101-0002", "reference"),
+            ("D-20260101", "C-20260101-0003", "reports_event"),
+        ]
+
+        report_relations = conn.execute(
+            "SELECT from_report_id, to_report_id, relation_type "
+            "FROM report_relations"
+        ).fetchall()
+        assert [
+            (
+                row["from_report_id"],
+                row["to_report_id"],
+                row["relation_type"],
+            )
+            for row in report_relations
+        ] == [("D-20260101", "D-20260101", "covers")]
+        report_ids = {
+            row["id"] for row in conn.execute("SELECT id FROM reports")
+        }
+        assert {
+            row["from_report_id"] for row in report_relations
+        } <= report_ids
+        assert {
+            row["to_report_id"] for row in report_relations
+        } <= report_ids
+    finally:
+        conn.close()
+
+
 def test_reimport_same_index_is_unchanged(tmp_path, monkeypatch, capsys):
     root = _init_workspace(tmp_path, monkeypatch)
     assert main(["migrate-legacy", "--index", str(FIXTURE_INDEX)]) == 0
