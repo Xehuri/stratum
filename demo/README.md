@@ -16,4 +16,7 @@ The demo is intended to exercise:
 - a contract-compliant atomic claim document
 - a CJK/UTF-8 fixture
 
-The CLI is not implemented yet. `demo/expected/` describes the outputs the future demo runner must produce after paths and clocks are normalized.
+Run the corpus with `stratum demo` from the repository root. The runner copies
+the synthetic workspaces to a temporary directory, never writes `.stratum/`
+into this tree, and prints deterministic plain text. `demo/expected/` describes
+the output; `--keep` preserves the temporary directory for inspection.

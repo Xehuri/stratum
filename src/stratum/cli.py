@@ -16,6 +16,7 @@ from . import __version__
 from .add import add_card, add_claim
 from .claims import CLAIM_TYPES
 from .db import open_db
+from .demo import run_demo
 from .errors import StratumError
 from .fsck import format_fsck, run_fsck
 from .history import (
@@ -58,7 +59,6 @@ EXIT_INCOMPLETE = 3
 
 UNIMPLEMENTED_COMMANDS = (
     "lint",
-    "demo",
 )
 
 
@@ -331,6 +331,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         metavar="WORKSPACE",
         help="workspace name, id, or path (overrides discovery)",
+    )
+
+    demo_parser = subparsers.add_parser(
+        "demo", help="run the synthetic demo corpus"
+    )
+    demo_parser.add_argument(
+        "--root",
+        metavar="PATH",
+        help="demo directory (default: ./demo)",
+    )
+    demo_parser.add_argument(
+        "--keep",
+        action="store_true",
+        help="keep the temporary workspace and print its path",
     )
 
     for command in UNIMPLEMENTED_COMMANDS:
@@ -840,6 +854,9 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_fsck(args)
     if args.command == "migrate-legacy":
         return _handle_migrate_legacy(args)
+    if args.command == "demo":
+        sys.stdout.write(run_demo(args.root, keep=args.keep))
+        return EXIT_OK
     if args.command in UNIMPLEMENTED_COMMANDS:
         print(
             f"stratum: error: '{args.command}' is not implemented yet; "

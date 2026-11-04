@@ -12,7 +12,6 @@ from stratum.migrations import SUPPORTED_SCHEMA_VERSION
 
 UNIMPLEMENTED = [
     "lint",
-    "demo",
 ]
 
 
@@ -32,6 +31,7 @@ def test_help_lists_commands(capsys):
         "diff",
         "restore",
         "fsck",
+        "demo",
     ):
         assert command in out
 

@@ -1,0 +1,18 @@
+Stratum demo
+Workspaces: 3
+Status: lantern-library blocks=7 cards=0 reports=0
+Status: prose-notes blocks=5 cards=0 reports=0
+Status: tidepool-lab blocks=14 cards=1 reports=0
+Manual block: BLK-f96c6583bc53f971 lines 12-24
+Card: C-75017b1283f1627c active
+Claim: OBS-D-2026-02-02-01 active
+Prose hit: BLK-18d5398a55761b42 field-notes.md line 3
+Legacy hit: BLK-0f7da95f83c730a9 notes/the-dispossessed.md line 6
+Fsck: clean (0 findings)
+Commit: lantern-library CMT-472a95785787e2a0 seq 1
+Commit: prose-notes CMT-9767c5dc1ba2c777 seq 1
+Commit: tidepool-lab CMT-627443888c7f63f8 seq 1
+Log: lantern-library 1 commit(s)
+Log: prose-notes 1 commit(s)
+Log: tidepool-lab 1 commit(s)
+Query: 1 active claim(s)

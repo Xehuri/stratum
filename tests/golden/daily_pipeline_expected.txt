@@ -1,0 +1,59 @@
+$ stratum ingest source sources/morning.md
+Ingested source: sources/morning.md
+Document: sources/morning.md
+Version: 1
+Profile: generic-heading
+Blocks: created 2, kept 0, updated 0, missing 0, lineage 0
+
+$ stratum ingest source sources/evening.md
+Ingested source: sources/evening.md
+Document: sources/evening.md
+Version: 1
+Profile: generic-heading
+Blocks: created 2, kept 0, updated 0, missing 0, lineage 0
+
+$ stratum query --type block --grep Morning sample
+BLK-24e3f83e4fbaffe6  active  -  structured  ## OBS-2026-03-02-01 Morning sample The synthetic morning sample was recorded.
+1 results
+
+$ stratum query --type block --grep Evening sample
+BLK-2eb90bd1a2e6b5e4  active  -  structured  ## OBS-2026-03-02-02 Evening sample The synthetic evening sample was recorded.
+1 results
+
+$ stratum add card --block BLK-24e3f83e4fbaffe6 --type observation --title Synthetic golden card --body Synthetic golden card body. --author 02-daily-review --date 2026-03-02
+Added card: C-3aea3876435de3cc
+Blocks: 1
+
+$ stratum ingest report reports/daily/2026-03-02.md
+Ingested report: RPT-D-2026-03-02
+Type: daily
+Status: created
+Claims: created 2, updated 0, rejected 0
+Evidence: 2
+Relations: 0
+Document: reports/daily/2026-03-02.md version 1
+
+$ stratum review promote C-3aea3876435de3cc --author 02-daily-review --reason golden
+Card C-3aea3876435de3cc: draft -> active
+
+$ stratum review promote OBS-D-2026-03-02-01 --author 02-daily-review --reason golden
+Claim OBS-D-2026-03-02-01: draft -> active
+
+$ stratum review promote CHG-D-2026-03-02-01 --author 02-daily-review --reason golden
+Claim CHG-D-2026-03-02-01: draft -> active
+
+$ stratum query --type claim --status active
+CHG-D-2026-03-02-01  active  2026-03-02..2026-03-03  change  A second synthetic batch was added.
+OBS-D-2026-03-02-01  active  2026-03-02..2026-03-03  observation  The synthetic morning batch was indexed.
+2 results
+
+$ stratum commit --author 02-daily-review --message golden daily pipeline
+Committed CMT-e9e0fadc514e4035
+Seq: 1
+Changes: 13
+
+$ stratum fsck
+Stratum fsck
+Run: FSCK-<RUN>
+Status: clean
+Findings: 0 (error 0, warning 0, info 0)
