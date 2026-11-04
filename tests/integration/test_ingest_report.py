@@ -273,6 +273,32 @@ def test_report_ingest_persists_report_claims_evidence_and_document(
         conn.close()
 
 
+def test_report_ingest_stores_stratum_commit_id(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        card_id = _seed_card(conn)
+    finally:
+        conn.close()
+
+    frontmatter = dict(DAILY_FM)
+    frontmatter["base_commit"] = "CMT-0123456789abcdef"
+    text = _document(
+        frontmatter, [_observation("OBS-D-2026-01-05-01", [card_id])]
+    )
+    path = _write(root, "reports/daily/2026-01-05.md", text)
+
+    assert main(["ingest", "report", str(path)]) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        report = conn.execute("SELECT base_commit FROM reports").fetchone()
+        assert report["base_commit"] == "CMT-0123456789abcdef"
+    finally:
+        conn.close()
+
+
 def test_report_ingest_is_idempotent(tmp_path, monkeypatch, capsys):
     root = _init(tmp_path, monkeypatch)
     conn = _db(root)

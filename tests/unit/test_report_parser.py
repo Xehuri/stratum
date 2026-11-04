@@ -57,6 +57,36 @@ def test_parse_weekly_fixture_lists_and_scale() -> None:
     )
 
 
+def test_parse_report_accepts_stratum_commit_id() -> None:
+    text = _fixture("daily.md").replace(
+        "base_commit: none", "base_commit: CMT-0123456789abcdef"
+    )
+
+    report = parse_report(text)
+
+    assert report.frontmatter.base_commit == "CMT-0123456789abcdef"
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "CMT-0123456789ABCDEF",
+        "CMT-0123456789abcde",
+        "CMT-0123456789abcdef0",
+        "0123456789abcdef0123456789abcdef0123456",
+        "0123456789abcdef0123456789abcdef012345678",
+        "0123456789ABCDEF0123456789abcdef01234567",
+    ),
+)
+def test_parse_report_rejects_invalid_base_commit(value: str) -> None:
+    text = _fixture("daily.md").replace("base_commit: none", f"base_commit: {value}")
+
+    with pytest.raises(ValidationError) as exc:
+        parse_report(text)
+
+    assert _code(exc) == "FRONTMATTER_INVALID"
+
+
 def test_parse_biweekly_fixture_counts() -> None:
     report = parse_report(_fixture("biweekly.md"))
     claim = report.claims[0]

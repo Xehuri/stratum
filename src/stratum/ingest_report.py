@@ -72,6 +72,7 @@ REQUIRED_SECTIONS = ("叙事", "检索条目", "运维")
 SECTION_PERIOD_DAYS = {"daily": 1, "weekly": 7, "biweekly": 14}
 _REPORT_ID_RE = re.compile(r"^RPT-([DWB])-(\d{4}-\d{2}-\d{2})(?:-r([2-9]\d*))?$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_STRATUM_COMMIT_RE = re.compile(r"^CMT-[0-9a-f]{16}$")
 _CLAIM_HEADING_RE = re.compile(r"^###[ \t]+(\S+)(?:[ \t]+(.*?))?[ \t]*$")
 
 
@@ -197,10 +198,13 @@ def _parse_frontmatter(scanned: ScannedDocument) -> ReportFrontMatter:
         base_commit = None
     elif _COMMIT_RE.fullmatch(base_commit_text):
         base_commit = base_commit_text
+    elif _STRATUM_COMMIT_RE.fullmatch(base_commit_text):
+        base_commit = base_commit_text
     else:
         _fail(
             "FRONTMATTER_INVALID",
-            "base_commit must be 40 lowercase hex characters or 'none'",
+            "base_commit must be 'none', CMT-<16 lowercase hex>, "
+            "or 40 lowercase hex characters",
         )
 
     created_at = values["created_at"]
