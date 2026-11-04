@@ -33,7 +33,7 @@ period_start: 2026-01-05
 period_end: 2026-01-12
 granularity: week
 author: 04-weekly-review
-base_commit: 0123456789abcdef0123456789abcdef01234567
+base_commit: CMT-0123456789abcdef
 created_at: 2026-01-12T01:00:00+08:00
 timezone: Asia/Shanghai
 ---
@@ -50,7 +50,7 @@ timezone: Asia/Shanghai
 | `period_end` | 是 | 下周一，`YYYY-MM-DD`，半开区间 |
 | `granularity` | 是 | 固定为 `week` |
 | `author` | 是 | 固定为 `04-weekly-review` |
-| `base_commit` | 是 | 生成报告时 Stratum HEAD 的 40 位小写十六进制 commit id；没有 HEAD 时写 `none` |
+| `base_commit` | 是 | 生成报告时的 Stratum HEAD，格式为 `CMT-` + 16 位小写十六进制；兼容旧报告的 40 位小写十六进制 git commit id；没有 HEAD 时写 `none` |
 | `created_at` | 是 | RFC 3339 时间戳，必须带时区偏移 |
 | `timezone` | 是 | IANA 时区名 |
 
@@ -281,7 +281,7 @@ stratum review promote OBS-W-2026-01-05-03 --author 04-weekly-review --reason "d
 ### 8.5 验证
 
 ```bash
-stratum query --type observation --from 2026-01-05 --to 2026-01-12 --status active
+stratum query --type claim --claim-type observation --from 2026-01-05 --to 2026-01-12 --status active
 ```
 
 确认：
@@ -304,7 +304,7 @@ period_start: 2026-01-05
 period_end: 2026-01-12
 granularity: week
 author: 04-weekly-review
-base_commit: 0123456789abcdef0123456789abcdef01234567
+base_commit: CMT-0123456789abcdef
 created_at: 2026-01-12T01:00:00+08:00
 timezone: Asia/Shanghai
 ---

@@ -11,7 +11,7 @@ Stratum（时间地层）是一个独立的 Markdown 观测与索引系统。
 
 ## 状态
 
-v0.1 已实现：CLI、SQLite schema、Markdown 切块、块身份、prose、ingest、claims、review、query、history、fsck、legacy importer 与 demo。`lint` 仍是后续工作。
+v0.1 已实现：CLI、SQLite schema、Markdown 切块、块身份、prose、ingest、claims、review、query、history、fsck、legacy importer、demo 与 `lint`。`lint` 在 v0.1.1 实现 strict 模式。
 
 设计文档：
 

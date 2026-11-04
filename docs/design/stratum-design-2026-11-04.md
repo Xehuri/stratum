@@ -45,7 +45,7 @@ Kinship 只是 Stratum 的第一个适配器。
 9. 块模型采用 selector + snapshot + anchor。
 10. 切块引擎与当前 Kinship 数据格式解耦。
 11. 任意 Markdown 可索引；不同质量的 Markdown 检索权重不同。
-12. 旧 `B-/L-/R-` JSONL 索引必须可迁移，旧 ID 保留，迁移期双读。
+12. 旧 `B-/L-/R-` JSONL 索引必须可迁移，旧 ID 保留；迁移是一次性快照，观察期保留外部回退窗口。
 13. 新增检索类型 `prose`（散文），用于没有稳定标题、claim、时间字段的无规律 Markdown。
 
 ---
@@ -177,7 +177,7 @@ issues:
 策略：
 
 - `strict`：不通过不进入高质量索引
-- `advisory`：警告并降级
+- `advisory`：警告并降级（v0.1.1 暂不存储，strict 为当前实现）
 - `legacy`：不检查，低权重
 
 ### 5.5 契约归属
@@ -893,7 +893,7 @@ TYPE_INFERRED / TYPE_AMBIGUOUS
 - 旧 JSONL 不改写
 - 旧 ID 原样保留
 - 新 ID 与旧 ID 映射
-- 迁移期双读
+- 一次性快照迁移，观察期保留外部回退窗口
 - 迁移失败可回滚
 
 ### 16.2 阶段
@@ -901,9 +901,9 @@ TYPE_INFERRED / TYPE_AMBIGUOUS
 ```text
 1. 导入 8 张表 + meta
 2. 校验 ID、引用、哈希
-3. 双读：旧 JSONL 与新 SQLite
-4. 新写入只写 SQLite
-5. 14 天零 fallback 后退役旧读
+3. 一次性快照：导入旧 JSONL 到 SQLite
+4. 观察期：Stratum 不读旧 JSONL；旧索引只读冻结，外部流程仍可回退
+5. 新写入只写 SQLite；14 天零 fallback 后退役旧读
 ```
 
 ### 16.3 映射
@@ -1028,7 +1028,7 @@ demo/
 | O3 | Python 版本 | 3.11+ | 实现前 |
 | O4 | 查询命令 | v1 必须有 `stratum query`，纯文本 | 实现前 |
 | O5 | 隐私/加密 | v1 本地明文 + 0600；加密后置 | 真实数据前 |
-| O6 | 迁移切换 | 双读 14 天，零 fallback 后切换 | 迁移前 |
+| O6 | 迁移切换 | 一次性快照 + 外部回退窗口 14 天，零 fallback 后切换 | 迁移前 |
 | O7 | 性能数字 | 采用本文目标，基准后修订 | 实现前 |
 | O8 | 锚点歧义策略 | 歧义标 broken，不静默重绑 | 块模块前 |
 | O9 | 时间语义 | UTC + timezone + 本地日期 + 半开区间 | 观测模块前 |
@@ -1062,7 +1062,7 @@ demo/
 - 任意 Markdown 路径、手动块、profile、fallback 均有定义
 - `structured` / `prose` / `legacy` 三种检索类型均有定义
 - History 明确无 staging/branch/merge
-- 旧索引迁移有双读、切换、回滚
+- 旧索引迁移有一次性快照、切换、回滚
 - demo 无真实数据
 - 跨平台约束明确
 

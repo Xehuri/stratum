@@ -528,7 +528,7 @@ source block
 
 - Loom v1 报告使用 `--profile loom-daily`、`--profile loom-weekly`、`--profile loom-biweekly`。
 - 新 Loom 报告不得使用 `legacy`。
-- `advisory` 是默认策略，`strict` 可选。
+- `advisory` 是契约目标策略；Stratum v0.1.1 只实现 `strict`，`advisory` 的 `contract_level` 持久化需要 schema v4，尚未落地。
 - 无论哪种策略，`active` 查询只返回通过证据下限和依赖检查的 claim。
 
 ## 11. 校验码

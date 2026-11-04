@@ -37,7 +37,7 @@ period_start: 2026-01-05
 period_end: 2026-01-06
 granularity: day
 author: 02-daily-review
-base_commit: 0123456789abcdef0123456789abcdef01234567
+base_commit: CMT-0123456789abcdef
 created_at: 2026-01-06T00:30:00+08:00
 timezone: Asia/Shanghai
 ---
@@ -54,7 +54,7 @@ timezone: Asia/Shanghai
 | `period_end` | 是 | 次日，`YYYY-MM-DD`，半开区间 |
 | `granularity` | 是 | 固定为 `day` |
 | `author` | 是 | 固定为 `02-daily-review` |
-| `base_commit` | 是 | 生成报告时 Stratum HEAD 的 40 位小写十六进制 commit id；没有 HEAD 时写 `none` |
+| `base_commit` | 是 | 生成报告时的 Stratum HEAD，格式为 `CMT-` + 16 位小写十六进制；兼容旧报告的 40 位小写十六进制 git commit id；没有 HEAD 时写 `none` |
 | `created_at` | 是 | RFC 3339 时间戳，必须带时区偏移 |
 | `timezone` | 是 | IANA 时区名，例如 `Asia/Shanghai` |
 
@@ -394,7 +394,7 @@ period_start: 2026-01-05
 period_end: 2026-01-06
 granularity: day
 author: 02-daily-review
-base_commit: 0123456789abcdef0123456789abcdef01234567
+base_commit: CMT-0123456789abcdef
 created_at: 2026-01-06T00:30:00+08:00
 timezone: Asia/Shanghai
 ---
