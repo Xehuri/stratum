@@ -20,6 +20,27 @@ end_line = 24
 start_anchor = "## Sensor calibration window"
 end_anchor = "## Deployment notes"
 
+[profiles.prose]
+selector = "paragraph"
+min_chars = 80
+max_chars = 4000
+fallback = "whole_document"
+retrieval_type = "prose"
+
+[profiles.legacy-narrative]
+selector = "heading"
+level = 2
+include_heading = true
+fallback = "whole_document"
+retrieval_type = "legacy"
+
+[path_profiles]
+"README.md" = "heading"
+"projects/salinity-sensor.md" = "manual"
+"reading-log.md" = "claim"
+"field-notes.md" = "prose"
+"notes/the-dispossessed.md" = "legacy-narrative"
+
 [workspaces.tidepool-lab]
 root = "workspaces/tidepool-lab"
 profile = "heading"
@@ -28,4 +49,9 @@ claim_profile = "claim"
 [workspaces.lantern-library]
 root = "workspaces/lantern-library"
 profile = "heading"
+claim_profile = "claim"
+
+[workspaces.prose-notes]
+root = "workspaces/prose-notes"
+profile = "prose"
 claim_profile = "claim"
