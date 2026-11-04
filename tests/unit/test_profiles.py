@@ -16,6 +16,7 @@ from stratum.segmentation.profiles import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+DEMO = ROOT / "src" / "stratum" / "demo_data"
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "markdown"
 
 
@@ -24,7 +25,7 @@ def _doc(name: str):
 
 
 def test_load_demo_profiles() -> None:
-    profiles = load_profiles(ROOT / "demo" / "profiles" / "demo.toml")
+    profiles = load_profiles(DEMO / "profiles" / "demo.toml")
 
     heading = profiles.get("heading")
     assert heading.selector == "heading"
@@ -63,7 +64,7 @@ def test_builtin_profiles_exist_and_prose_defaults() -> None:
 
 
 def test_explicit_profile_beats_document_hint() -> None:
-    profiles = load_profiles(ROOT / "demo" / "profiles" / "demo.toml")
+    profiles = load_profiles(DEMO / "profiles" / "demo.toml")
     doc = _doc("frontmatter.md")
 
     resolved = profiles.resolve(explicit="prose-paragraph", document=doc)

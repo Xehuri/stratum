@@ -1,6 +1,6 @@
 # Stratum runtime state
 .stratum/
-demo/**/.stratum/
+src/stratum/demo_data/**/.stratum/
 
 # Boulder/plan local state
 .omo/

@@ -49,7 +49,7 @@ stratum demo
 - Markdown 源文件是唯一真值。
 - Stratum 不修改源 Markdown。
 - 本仓库不保存真实个人数据。
-- `demo/` 只包含合成数据。
+- `src/stratum/demo_data/` 随包发布，只包含合成数据；`stratum demo` 可在任意工作目录运行。
 
 ## 许可
 

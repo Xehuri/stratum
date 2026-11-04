@@ -12,6 +12,7 @@ from stratum.segmentation.profiles import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+DEMO = ROOT / "src" / "stratum" / "demo_data"
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "markdown"
 
 
@@ -51,9 +52,9 @@ def test_fixture_matrix_has_expected_structure() -> None:
 
 
 def test_heading_profile_segments_demo_document_deterministically() -> None:
-    profiles = load_profiles(ROOT / "demo" / "profiles" / "demo.toml")
+    profiles = load_profiles(DEMO / "profiles" / "demo.toml")
     document = scan_file(
-        ROOT / "demo" / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
+        DEMO / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
     )
     profile = profiles.get("heading")
 
@@ -81,9 +82,9 @@ def test_heading_profile_segments_demo_document_deterministically() -> None:
 
 
 def test_manual_profile_segments_demo_range() -> None:
-    profiles = load_profiles(ROOT / "demo" / "profiles" / "demo.toml")
+    profiles = load_profiles(DEMO / "profiles" / "demo.toml")
     document = scan_file(
-        ROOT / "demo" / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
+        DEMO / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
     )
 
     drafts = segment_document(
@@ -144,9 +145,9 @@ def test_prose_profile_end_to_end() -> None:
 
 
 def test_resegmentation_of_unchanged_document_reports_no_changes() -> None:
-    profiles = load_profiles(ROOT / "demo" / "profiles" / "demo.toml")
+    profiles = load_profiles(DEMO / "profiles" / "demo.toml")
     document = scan_file(
-        ROOT / "demo" / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
+        DEMO / "workspaces" / "tidepool-lab" / "projects" / "salinity-sensor.md"
     )
     profile = profiles.get("heading")
     drafts = segment_document(

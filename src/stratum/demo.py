@@ -1,9 +1,11 @@
 """Deterministic synthetic demo runner for ``stratum demo``.
 
-The runner never touches the repository demo directory. It copies the synthetic
-workspaces into a temporary directory, initialises one workspace per copy,
-ingests every Markdown source, creates one manual card and one L2 claim, runs
-fsck, commits each workspace and prints a fixed plain-text summary.
+The corpus ships inside the package at ``stratum/demo_data`` so the demo works
+from any working directory, including a clean wheel install. The runner never
+writes into the packaged tree: it copies the synthetic workspaces into a
+temporary directory, initialises one workspace per copy, ingests every Markdown
+source, creates one manual card and one L2 claim, runs fsck, commits each
+workspace and prints a fixed plain-text summary.
 
 Output deliberately excludes temporary absolute paths, timestamps, UUIDs and
 the random fsck run id, so two runs on the same corpus produce identical text.
@@ -44,8 +46,12 @@ class DemoWorkspace:
     db_path: str
 
 
+def _default_demo_root() -> Path:
+    return Path(__file__).resolve().parent / "demo_data"
+
+
 def _resolve_demo_root(root: str | os.PathLike[str] | None) -> Path:
-    candidate = Path.cwd() / "demo" if root is None else Path(root)
+    candidate = _default_demo_root() if root is None else Path(root)
     candidate = candidate.expanduser()
     try:
         resolved = candidate.resolve()

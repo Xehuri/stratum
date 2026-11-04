@@ -18,7 +18,7 @@ from stratum.cli import main
 from stratum.markdown import scan_file
 
 ROOT = Path(__file__).resolve().parents[2]
-DEMO = ROOT / "demo"
+DEMO = Path(demo_module.__file__).resolve().parent / "demo_data"
 
 
 def _run_demo(capsys, monkeypatch, *args: str) -> tuple[int, str, str]:
@@ -68,6 +68,19 @@ def test_demo_runs_twice_deterministically(monkeypatch, capsys):
     assert '"' not in output
     assert not any((DEMO).rglob(".stratum"))
     assert not any((DEMO).rglob("*.db"))
+
+
+def test_demo_default_root_runs_from_unrelated_cwd(tmp_path, monkeypatch, capsys):
+    unrelated = tmp_path / "unrelated-cwd"
+    unrelated.mkdir()
+    monkeypatch.chdir(unrelated)
+
+    code, out, err = _run_demo(capsys, monkeypatch)
+
+    assert code == 0
+    assert err == ""
+    assert "Workspaces: 3" in out
+    assert not any(unrelated.iterdir())
 
 
 def test_demo_cleans_temp_workspace_by_default(tmp_path, monkeypatch, capsys):

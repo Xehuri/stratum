@@ -16,7 +16,8 @@ The demo is intended to exercise:
 - a contract-compliant atomic claim document
 - a CJK/UTF-8 fixture
 
-Run the corpus with `stratum demo` from the repository root. The runner copies
-the synthetic workspaces to a temporary directory, never writes `.stratum/`
-into this tree, and prints deterministic plain text. `demo/expected/` describes
-the output; `--keep` preserves the temporary directory for inspection.
+Run the corpus with `stratum demo`; it works from any working directory because
+the corpus ships inside the package. The runner copies the synthetic workspaces
+to a temporary directory, never writes `.stratum/` into this tree, and prints
+deterministic plain text. `src/stratum/demo_data/expected/` describes the
+output; `--keep` preserves the temporary directory for inspection.
