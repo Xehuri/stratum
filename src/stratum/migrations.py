@@ -45,9 +45,14 @@ def _load_schema_v2() -> str:
     return _load_schema("schema_v2.sql")
 
 
+def _load_schema_v3() -> str:
+    return _load_schema("schema_v3.sql")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, name="create_schema_v1", sql=_load_schema_v1()),
     Migration(version=2, name="add_claims", sql=_load_schema_v2()),
+    Migration(version=3, name="add_review_events", sql=_load_schema_v3()),
 )
 
 SUPPORTED_SCHEMA_VERSION = MIGRATIONS[-1].version

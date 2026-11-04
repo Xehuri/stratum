@@ -14,10 +14,21 @@ from pathlib import Path
 
 from . import __version__
 from .add import add_card, add_claim
+from .claims import CLAIM_TYPES
 from .db import open_db
 from .errors import StratumError
 from .ingest_report import ingest_report_file
 from .ingest_source import ingest_source_file
+from .query import format_query_rows, query_items
+from .review import (
+    ALL_ENTITY_STATUSES,
+    bulk_promote,
+    list_items,
+    promote,
+    reject,
+    reopen,
+    show_item,
+)
 from .workspace import (
     WorkspaceError,
     add_workspace,
@@ -37,7 +48,6 @@ EXIT_INCOMPLETE = 3
 
 UNIMPLEMENTED_COMMANDS = (
     "lint",
-    "query",
     "commit",
     "log",
     "diff",
@@ -192,6 +202,76 @@ def build_parser() -> argparse.ArgumentParser:
     claim_parser.add_argument("--body", required=True, metavar="TEXT")
     claim_parser.add_argument("--report-id", metavar="REPORT_ID")
     claim_parser.add_argument("--author", metavar="NAME")
+
+    review_parser = subparsers.add_parser(
+        "review", help="review, promote, reject and reopen drafts"
+    )
+    review_sub = review_parser.add_subparsers(
+        dest="review_command", metavar="ACTION"
+    )
+
+    review_list = review_sub.add_parser(
+        "list", help="list draft claims and cards"
+    )
+    review_list.add_argument(
+        "--type", dest="entity_type", choices=("claim", "card")
+    )
+    review_list.add_argument(
+        "--status", choices=ALL_ENTITY_STATUSES
+    )
+    review_list.add_argument("--date", metavar="YYYY-MM-DD")
+    review_list.add_argument("--limit", type=int, default=50, metavar="N")
+
+    review_show = review_sub.add_parser(
+        "show", help="show one claim or card with evidence and audit trail"
+    )
+    review_show.add_argument("entity_id", metavar="ID")
+
+    for action in ("promote", "reject", "reopen"):
+        action_parser = review_sub.add_parser(
+            action, help=f"{action} one draft claim or card"
+        )
+        action_parser.add_argument("entity_id", metavar="ID")
+        action_parser.add_argument("--author", required=True, metavar="NAME")
+        action_parser.add_argument("--reason", required=True, metavar="TEXT")
+
+    bulk_parser = review_sub.add_parser(
+        "bulk-promote", help="promote every card or daily claim for one date"
+    )
+    bulk_parser.add_argument(
+        "--type", required=True, dest="entity_type", choices=("claim", "card")
+    )
+    bulk_parser.add_argument("--date", required=True, metavar="YYYY-MM-DD")
+    bulk_parser.add_argument("--author", required=True, metavar="NAME")
+    bulk_parser.add_argument("--reason", required=True, metavar="TEXT")
+
+    query_parser = subparsers.add_parser(
+        "query", help="query claims, cards, reports and blocks"
+    )
+    query_parser.add_argument(
+        "--type",
+        dest="entity_type",
+        default="claim",
+        choices=("claim", "card", "report", "block", "prose", "structured"),
+    )
+    query_parser.add_argument("--from", dest="date_from", metavar="DATE")
+    query_parser.add_argument("--to", dest="date_to", metavar="DATE")
+    query_parser.add_argument("--status", choices=sorted(
+        {
+            "draft",
+            "active",
+            "superseded",
+            "rejected",
+            "stale",
+            "archived",
+            "missing",
+        }
+    ))
+    query_parser.add_argument("--claim-type", choices=CLAIM_TYPES)
+    query_parser.add_argument("--grep", metavar="TEXT")
+    query_parser.add_argument("--include-draft", action="store_true")
+    query_parser.add_argument("--limit", type=int, default=50, metavar="N")
+    query_parser.add_argument("--context", type=int, default=0, metavar="N")
 
     for command in UNIMPLEMENTED_COMMANDS:
         command_parser = subparsers.add_parser(
@@ -385,6 +465,197 @@ def _handle_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _one_line(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def _truncate(text: str, width: int = 120) -> str:
+    flat = _one_line(text)
+    if len(flat) <= width:
+        return flat
+    return flat[: width - 3] + "..."
+
+
+def _workspace_conn(workspace: str | None) -> sqlite3.Connection:
+    selected = resolve_workspace(explicit=workspace)
+    database = Path(selected.db_path)
+    if str(database) != ":memory:" and not database.is_file():
+        raise WorkspaceError(f"workspace database not found: {selected.db_path}")
+    return open_db(selected.db_path)
+
+
+def _review_detail_text(detail) -> str:
+    row = detail.row
+    lines = [f"{detail.entity_type.capitalize()} {detail.entity_id}"]
+    lines.append(f"Status: {detail.status}")
+    if detail.entity_type == "claim":
+        lines.append(f"Type: {row['claim_type']}")
+    else:
+        lines.append(f"Type: {row['card_type']}")
+        lines.append(f"Title: {_one_line(row['title'])}")
+    start = row["period_start"] if "period_start" in row.keys() else None
+    end = row["period_end"] if "period_end" in row.keys() else None
+    if start and end:
+        lines.append(f"Period: {start}..{end}")
+    elif start:
+        lines.append(f"Period: {start}..")
+    else:
+        lines.append("Period: -")
+    author = row["author"] if "author" in row.keys() else None
+    lines.append(f"Author: {author if author else '-'}")
+    if detail.entity_type == "claim" and row["data_gap"]:
+        lines.append(f"Data gap: {row['data_gap']}")
+    lines.append(f"Body: {_one_line(row['body'])}")
+
+    lines.append("Evidence:")
+    if not detail.evidence:
+        lines.append("  none")
+    for item in detail.evidence:
+        if detail.entity_type == "claim":
+            lines.append(
+                f"  {item['target_type']} {item['target_id']} "
+                f"({item['role']})"
+            )
+        else:
+            state = item["block_status"] or "missing"
+            kind = item["retrieval_type"] or "unknown"
+            lines.append(
+                f"  block {item['target_id']} ({kind}, {state}, "
+                f"{item['role']})"
+            )
+
+    lines.append("Relations:")
+    if not detail.relations:
+        lines.append("  none")
+    for item in detail.relations:
+        lines.append(f"  {item['relation_type']} -> {item['to_claim_id']}")
+
+    lines.append("Review events:")
+    if not detail.events:
+        lines.append("  none")
+    for event in detail.events:
+        lines.append(
+            f"  {event['created_at']} {event['action']} "
+            f"{event['from_status']} -> {event['to_status']} "
+            f"by {event['author']}: {event['reason']}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _handle_review(args: argparse.Namespace) -> int:
+    action = args.review_command
+    if action is None:
+        print(
+            "stratum: error: review requires an action "
+            "(list, show, promote, reject, reopen, bulk-promote)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    conn = _workspace_conn(args.workspace)
+    try:
+        if action == "list":
+            items = list_items(
+                conn,
+                entity_type=args.entity_type,
+                status=args.status,
+                day=args.date,
+                limit=args.limit,
+            )
+            for item in items:
+                _print(
+                    f"{item.entity_id}  {item.status}  {item.entity_type}  "
+                    f"{item.period}  {_truncate(item.text)}"
+                )
+            _print(f"{len(items)} items")
+            return EXIT_OK
+
+        if action == "show":
+            detail = show_item(conn, args.entity_id)
+            sys.stdout.write(_review_detail_text(detail))
+            return EXIT_OK
+
+        if action in {"promote", "reject", "reopen"}:
+            operation = {
+                "promote": promote,
+                "reject": reject,
+                "reopen": reopen,
+            }[action]
+            result = operation(
+                conn,
+                args.entity_id,
+                author=args.author,
+                reason=args.reason,
+            )
+            label = result.entity_type.capitalize()
+            if result.changed:
+                _print(
+                    f"{label} {result.entity_id}: "
+                    f"{result.from_status} -> {result.to_status}"
+                )
+            else:
+                _print(
+                    f"{label} {result.entity_id} is already "
+                    f"{result.from_status}; no change"
+                )
+            return EXIT_OK
+
+        if action == "bulk-promote":
+            result = bulk_promote(
+                conn,
+                entity_type=args.entity_type,
+                day=args.date,
+                author=args.author,
+                reason=args.reason,
+            )
+            for item in result.results:
+                label = item.entity_type.capitalize()
+                if item.changed:
+                    _print(
+                        f"{label} {item.entity_id}: "
+                        f"{item.from_status} -> {item.to_status}"
+                    )
+                else:
+                    _print(
+                        f"{label} {item.entity_id} is already "
+                        f"{item.from_status}; no change"
+                    )
+            _print(
+                f"Promoted {result.promoted_count} {result.entity_type}s "
+                f"for {result.day}"
+            )
+            return EXIT_OK
+
+        print(
+            f"stratum: error: unknown review action: {action}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
+def _handle_query(args: argparse.Namespace) -> int:
+    conn = _workspace_conn(args.workspace)
+    try:
+        rows = query_items(
+            conn,
+            entity_type=args.entity_type,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            status=args.status,
+            claim_type=args.claim_type,
+            grep=args.grep,
+            include_draft=args.include_draft,
+            limit=args.limit,
+            context=args.context,
+        )
+        sys.stdout.write(format_query_rows(rows))
+    finally:
+        conn.close()
+    return EXIT_OK
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command is None:
         print(
@@ -402,6 +673,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_ingest(args)
     if args.command == "add":
         return _handle_add(args)
+    if args.command == "review":
+        return _handle_review(args)
+    if args.command == "query":
+        return _handle_query(args)
     if args.command in UNIMPLEMENTED_COMMANDS:
         print(
             f"stratum: error: '{args.command}' is not implemented yet; "
