@@ -1253,14 +1253,11 @@ def _import_report_relations(
                 "LEGACY_REFERENCE_MISSING",
                 f"{where}: card {to_card!r} does not exist",
             )
-        if relation != "observes":
-            # The schema has no report-to-card relation table beyond
-            # report_cards; only observation links are promoted.
-            continue
+        role = "reference" if relation == "observes" else relation
         cursor = conn.execute(
             "INSERT OR IGNORE INTO report_cards (report_id, card_id, role) "
-            "VALUES (?, ?, 'reference')",
-            (from_report, to_card),
+            "VALUES (?, ?, ?)",
+            (from_report, to_card, role),
         )
         if cursor.rowcount:
             counts["report_cards"] += 1
