@@ -1,0 +1,29 @@
+# Stratum runtime state
+.stratum/
+demo/**/.stratum/
+
+# Boulder/plan local state
+.omo/
+
+# SQLite databases and sidecars
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

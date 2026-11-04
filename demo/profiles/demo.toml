@@ -1,0 +1,31 @@
+# Synthetic profiles for the Stratum demo.
+# Profile format is provisional; see the design document open decisions.
+
+[profiles.heading]
+selector = "heading"
+level = 2
+include_heading = true
+fallback = "whole_document"
+
+[profiles.claim]
+selector = "heading"
+level = 2
+include_heading = true
+heading_prefixes = ["OBS-", "FIND-", "CHANGE-", "PATTERN-"]
+
+[profiles.manual]
+selector = "manual_range"
+start_line = 12
+end_line = 24
+start_anchor = "## Sensor calibration window"
+end_anchor = "## Deployment notes"
+
+[workspaces.tidepool-lab]
+root = "workspaces/tidepool-lab"
+profile = "heading"
+claim_profile = "claim"
+
+[workspaces.lantern-library]
+root = "workspaces/lantern-library"
+profile = "heading"
+claim_profile = "claim"
