@@ -8,9 +8,9 @@ import pytest
 
 from stratum.cli import main
 from stratum.db import open_db
+from stratum.migrations import SUPPORTED_SCHEMA_VERSION
 
 UNIMPLEMENTED = [
-    "ingest",
     "lint",
     "query",
     "commit",
@@ -92,7 +92,10 @@ def test_init_list_and_status_roundtrip(tmp_path, monkeypatch, capsys):
 
     conn = open_db(root / ".stratum" / "stratum.db")
     try:
-        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 1
+        assert (
+            conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+            == SUPPORTED_SCHEMA_VERSION
+        )
         assert conn.execute("SELECT COUNT(*) FROM blocks").fetchone()[0] == 0
     finally:
         conn.close()
