@@ -313,6 +313,11 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--include-draft", action="store_true")
     query_parser.add_argument("--limit", type=int, default=50, metavar="N")
     query_parser.add_argument("--context", type=int, default=0, metavar="N")
+    query_parser.add_argument(
+        "--follow",
+        action="store_true",
+        help="include one-hop related claims/cards/reports",
+    )
 
     commit_parser = subparsers.add_parser(
         "commit", help="record working index changes as one linear commit"
@@ -778,6 +783,7 @@ def _handle_query(args: argparse.Namespace) -> int:
             include_draft=args.include_draft,
             limit=args.limit,
             context=args.context,
+            follow=args.follow,
         )
         sys.stdout.write(format_query_rows(rows))
     finally:

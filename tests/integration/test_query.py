@@ -351,3 +351,86 @@ def test_query_bad_arguments_exit_two(tmp_path, monkeypatch, capsys):
     assert main(["query", "--type", "block", "--claim-type", "observation"]) == 2
     assert main(["query", "--limit", "0"]) == 2
     assert main(["query", "--status", "bogus"]) == 2
+
+
+def test_query_follows_card_relations(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_card(conn, "C-ROOT", title="Root", body="root card")
+        _seed_card(conn, "C-RELATED", title="Related", body="related card")
+        conn.execute(
+            "INSERT INTO card_relations "
+            "(id, from_card_id, to_card_id, relation_type, claim_type, source) "
+            "VALUES ('REL-1', 'C-ROOT', 'C-RELATED', 'triggered_by', 'causal', 'agent')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    out = _run(capsys, "query", "--type", "card", "--grep", "root", "--follow")
+    assert "C-ROOT" in out
+    assert "C-RELATED" in out
+    assert "via triggered_by from C-ROOT" in out
+    assert "1 results" in out
+
+
+def test_query_follows_claim_relations(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_claim(conn, "OBS-D-2026-01-05-01", body="root claim")
+        _seed_claim(conn, "OBS-D-2026-01-05-02", body="related claim")
+        conn.execute(
+            "INSERT INTO claim_relations "
+            "(id, from_claim_id, to_claim_id, relation_type) "
+            "VALUES ('CREL-1', 'OBS-D-2026-01-05-02', "
+            "'OBS-D-2026-01-05-01', 'derived_from')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    out = _run(capsys, "query", "--type", "claim", "--grep", "root", "--follow")
+    assert "OBS-D-2026-01-05-01" in out
+    assert "OBS-D-2026-01-05-02" in out
+    assert "via derived_from from OBS-D-2026-01-05-01" in out
+    assert "1 results" in out
+
+
+def test_query_follows_report_cards_and_reports(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_report(conn, "RPT-ROOT", title="root report")
+        _seed_report(
+            conn, "RPT-CHILD", title="child report",
+            period_start="2026-01-06", period_end="2026-01-07",
+        )
+        _seed_card(conn, "C-REPORT-CARD", title="Report card", body="report card")
+        conn.execute(
+            "INSERT INTO report_cards (report_id, card_id, role) "
+            "VALUES ('RPT-ROOT', 'C-REPORT-CARD', 'reports_event')"
+        )
+        conn.execute(
+            "INSERT INTO report_relations "
+            "(id, from_report_id, to_report_id, relation_type) "
+            "VALUES ('RREL-1', 'RPT-ROOT', 'RPT-CHILD', 'covers')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    out = _run(capsys, "query", "--type", "report", "--grep", "root", "--follow")
+    assert "RPT-ROOT" in out
+    assert "C-REPORT-CARD" in out
+    assert "RPT-CHILD" in out
+    assert "via report_card:reports_event from RPT-ROOT" in out
+    assert "via covers from RPT-ROOT" in out
+    assert "1 results" in out
+
+
+def test_query_follow_rejects_blocks(tmp_path, monkeypatch, capsys):
+    _init(tmp_path, monkeypatch)
+    assert main(["query", "--type", "block", "--follow"]) == 2
+    assert "follow" in capsys.readouterr().err.lower()

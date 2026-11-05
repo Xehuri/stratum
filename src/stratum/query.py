@@ -3,7 +3,8 @@
 The default claim/card/block view is active content. ``--include-draft``
 opens the review backlog for claims and cards (draft, rejected, stale) and
 stale/missing blocks for block queries. An explicit ``--status`` always
-wins. No FTS table is required: ``--grep`` is a parameterised SQL LIKE.
+wins. ``--follow`` adds one hop of claim/card/report relations. No FTS table
+is required: ``--grep`` is a parameterised SQL LIKE.
 """
 
 from __future__ import annotations
@@ -51,6 +52,8 @@ class QueryRow:
     document_id: str | None = None
     line_start: int | None = None
     context: bool = False
+    relation_type: str | None = None
+    related_to: str | None = None
 
     @property
     def period(self) -> str:
@@ -113,6 +116,7 @@ def query_items(
     include_draft: bool = False,
     limit: int = DEFAULT_LIMIT,
     context: int = 0,
+    follow: bool = False,
 ) -> list[QueryRow]:
     if entity_type not in QUERY_ENTITY_TYPES:
         raise UsageProblem(
@@ -124,6 +128,8 @@ def query_items(
         raise UsageProblem("--context must be zero or greater")
     if context and entity_type not in {"block", "prose", "structured"}:
         raise UsageProblem("--context is only valid for block queries")
+    if follow and entity_type in {"block", "prose", "structured"}:
+        raise UsageProblem("--follow is only valid for claim, card or report queries")
     if status is not None and status not in QUERY_STATUSES:
         raise UsageProblem(f"unknown status {status!r}")
     if claim_type is not None:
@@ -178,7 +184,7 @@ def query_items(
         sql.append("ORDER BY period_start, id LIMIT ?")
         params.append(limit)
         rows = conn.execute(" ".join(sql), params).fetchall()
-        return [
+        result = [
             QueryRow(
                 entity_type=entity_type,
                 entity_id=str(row["id"]),
@@ -190,6 +196,11 @@ def query_items(
             )
             for row in rows
         ]
+        if follow and result:
+            if entity_type == "claim":
+                return _follow_claim_rows(conn, result)
+            return _follow_card_rows(conn, result)
+        return result
 
     if entity_type == "report":
         sql = [
@@ -211,7 +222,7 @@ def query_items(
         sql.append("ORDER BY period_start, id LIMIT ?")
         params.append(limit)
         rows = conn.execute(" ".join(sql), params).fetchall()
-        return [
+        result = [
             QueryRow(
                 entity_type="report",
                 entity_id=str(row["id"]),
@@ -223,6 +234,9 @@ def query_items(
             )
             for row in rows
         ]
+        if follow and result:
+            return _follow_report_rows(conn, result)
+        return result
 
     retrieval_type: str | None = None
     if entity_type in {"prose", "structured"}:
@@ -262,6 +276,220 @@ def query_items(
     if context and rows:
         rows = _with_block_context(conn, rows, context)
     return rows
+
+
+def _follow_targets(
+    conn: sqlite3.Connection,
+    table: str,
+    from_column: str,
+    to_column: str,
+    relation_column: str,
+    primary_ids: set[str],
+) -> dict[str, tuple[str, str]]:
+    placeholders = _placeholders(sorted(primary_ids))
+    rows = conn.execute(
+        f"""
+        SELECT {from_column} AS source, {to_column} AS target,
+               {relation_column} AS relation
+        FROM {table}
+        WHERE {from_column} IN ({placeholders})
+           OR {to_column} IN ({placeholders})
+        """,
+        (*sorted(primary_ids), *sorted(primary_ids)),
+    ).fetchall()
+    targets: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        source = str(row["source"])
+        target = str(row["target"])
+        if source in primary_ids and target not in primary_ids:
+            targets.setdefault(target, (str(row["relation"]), source))
+        elif target in primary_ids and source not in primary_ids:
+            targets.setdefault(source, (str(row["relation"]), target))
+    return targets
+
+
+def _follow_card_rows(
+    conn: sqlite3.Connection, primary: Sequence[QueryRow]
+) -> list[QueryRow]:
+    primary_ids = {row.entity_id for row in primary}
+    targets = _follow_targets(
+        conn,
+        "card_relations",
+        "from_card_id",
+        "to_card_id",
+        "relation_type",
+        primary_ids,
+    )
+    if not targets:
+        return list(primary)
+    placeholders = _placeholders(sorted(targets))
+    rows = conn.execute(
+        f"""
+        SELECT id, status, COALESCE(card_type, '') AS type_label,
+               period_start, period_end, body
+        FROM cards WHERE id IN ({placeholders})
+        ORDER BY period_start, id
+        """,
+        tuple(sorted(targets)),
+    ).fetchall()
+    followed = [
+        QueryRow(
+            entity_type="card",
+            entity_id=str(row["id"]),
+            status=str(row["status"]),
+            type_label=str(row["type_label"] or ""),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            body=str(row["body"]),
+            context=True,
+            relation_type=targets[str(row["id"])][0],
+            related_to=targets[str(row["id"])][1],
+        )
+        for row in rows
+    ]
+    return [*primary, *followed]
+
+
+def _follow_claim_rows(
+    conn: sqlite3.Connection, primary: Sequence[QueryRow]
+) -> list[QueryRow]:
+    primary_ids = {row.entity_id for row in primary}
+    targets = _follow_targets(
+        conn,
+        "claim_relations",
+        "from_claim_id",
+        "to_claim_id",
+        "relation_type",
+        primary_ids,
+    )
+    if not targets:
+        return list(primary)
+    placeholders = _placeholders(sorted(targets))
+    rows = conn.execute(
+        f"""
+        SELECT id, status, claim_type AS type_label,
+               period_start, period_end, body
+        FROM claims WHERE id IN ({placeholders})
+        ORDER BY period_start, id
+        """,
+        tuple(sorted(targets)),
+    ).fetchall()
+    followed = [
+        QueryRow(
+            entity_type="claim",
+            entity_id=str(row["id"]),
+            status=str(row["status"]),
+            type_label=str(row["type_label"]),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            body=str(row["body"]),
+            context=True,
+            relation_type=targets[str(row["id"])][0],
+            related_to=targets[str(row["id"])][1],
+        )
+        for row in rows
+    ]
+    return [*primary, *followed]
+
+
+def _follow_report_rows(
+    conn: sqlite3.Connection, primary: Sequence[QueryRow]
+) -> list[QueryRow]:
+    primary_ids = {row.entity_id for row in primary}
+    card_targets: dict[str, tuple[str, str]] = {}
+    report_targets: dict[str, tuple[str, str]] = {}
+    placeholders = _placeholders(sorted(primary_ids))
+    card_rows = conn.execute(
+        f"""
+        SELECT report_id, card_id, role FROM report_cards
+        WHERE report_id IN ({placeholders})
+        ORDER BY card_id
+        """,
+        tuple(sorted(primary_ids)),
+    ).fetchall()
+    for row in card_rows:
+        card_targets.setdefault(
+            str(row["card_id"]), (f"report_card:{row['role']}", str(row["report_id"]))
+        )
+    report_rows = conn.execute(
+        f"""
+        SELECT from_report_id, to_report_id, relation_type
+        FROM report_relations
+        WHERE from_report_id IN ({placeholders})
+           OR to_report_id IN ({placeholders})
+        """,
+        (*sorted(primary_ids), *sorted(primary_ids)),
+    ).fetchall()
+    for row in report_rows:
+        source = str(row["from_report_id"])
+        target = str(row["to_report_id"])
+        if source in primary_ids and target not in primary_ids:
+            report_targets.setdefault(
+                target, (str(row["relation_type"]), source)
+            )
+        elif target in primary_ids and source not in primary_ids:
+            report_targets.setdefault(
+                source, (str(row["relation_type"]), target)
+            )
+
+    followed: list[QueryRow] = []
+    if card_targets:
+        ids = _placeholders(sorted(card_targets))
+        rows = conn.execute(
+            f"""
+            SELECT id, status, COALESCE(card_type, '') AS type_label,
+                   period_start, period_end, body
+            FROM cards WHERE id IN ({ids})
+            ORDER BY period_start, id
+            """,
+            tuple(sorted(card_targets)),
+        ).fetchall()
+        for row in rows:
+            card_id = str(row["id"])
+            relation, source = card_targets[card_id]
+            followed.append(
+                QueryRow(
+                    entity_type="card",
+                    entity_id=card_id,
+                    status=str(row["status"]),
+                    type_label=str(row["type_label"] or ""),
+                    period_start=row["period_start"],
+                    period_end=row["period_end"],
+                    body=str(row["body"]),
+                    context=True,
+                    relation_type=relation,
+                    related_to=source,
+                )
+            )
+    if report_targets:
+        ids = _placeholders(sorted(report_targets))
+        rows = conn.execute(
+            f"""
+            SELECT id, status, report_type AS type_label,
+                   period_start, period_end, title AS body
+            FROM reports WHERE id IN ({ids})
+            ORDER BY period_start, id
+            """,
+            tuple(sorted(report_targets)),
+        ).fetchall()
+        for row in rows:
+            report_id = str(row["id"])
+            relation, source = report_targets[report_id]
+            followed.append(
+                QueryRow(
+                    entity_type="report",
+                    entity_id=report_id,
+                    status=str(row["status"]),
+                    type_label=str(row["type_label"]),
+                    period_start=row["period_start"],
+                    period_end=row["period_end"],
+                    body=str(row["body"]),
+                    context=True,
+                    relation_type=relation,
+                    related_to=source,
+                )
+            )
+    return [*primary, *followed]
 
 
 def _with_block_context(
@@ -319,9 +547,12 @@ def format_query_rows(rows: Sequence[QueryRow]) -> str:
     lines: list[str] = []
     for row in rows:
         prefix = "  " if row.context else ""
+        suffix = ""
+        if row.context and row.relation_type:
+            suffix = f"  via {row.relation_type} from {row.related_to}"
         lines.append(
             f"{prefix}{row.entity_id}  {row.status}  {row.period}  "
-            f"{row.type_label}  {_one_line(row.body)}"
+            f"{row.type_label}  {_one_line(row.body)}{suffix}"
         )
     count = sum(1 for row in rows if not row.context)
     lines.append(f"{count} results")
