@@ -38,7 +38,7 @@ stratum add claim
 stratum add relation
 stratum review list/show/promote/reject/reopen/bulk-promote
 stratum query
-stratum query --follow
+stratum query --follow --sort relevance
 stratum status
 stratum commit/log/diff/restore
 stratum fsck

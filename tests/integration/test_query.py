@@ -434,3 +434,44 @@ def test_query_follow_rejects_blocks(tmp_path, monkeypatch, capsys):
     _init(tmp_path, monkeypatch)
     assert main(["query", "--type", "block", "--follow"]) == 2
     assert "follow" in capsys.readouterr().err.lower()
+
+
+def test_query_sort_relevance_orders_causal_before_temporal(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_card(conn, "C-SORT-ROOT", title="Root", body="sort root")
+        _seed_card(conn, "C-SORT-TRIGGER", title="Triggered", body="triggered")
+        _seed_card(conn, "C-SORT-PRECEDE", title="Precede", body="precede")
+        conn.execute(
+            "INSERT INTO card_relations "
+            "(id, from_card_id, to_card_id, relation_type, claim_type, source) "
+            "VALUES ('REL-SORT-T', 'C-SORT-ROOT', 'C-SORT-TRIGGER', "
+            "'triggered_by', 'causal', 'agent')"
+        )
+        conn.execute(
+            "INSERT INTO card_relations "
+            "(id, from_card_id, to_card_id, relation_type, claim_type, source) "
+            "VALUES ('REL-SORT-P', 'C-SORT-ROOT', 'C-SORT-PRECEDE', "
+            "'precedes', 'temporal', 'agent')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    out = _run(
+        capsys,
+        "query", "--type", "card", "--grep", "sort root",
+        "--follow", "--sort", "relevance",
+    )
+    root_at = out.index("C-SORT-ROOT")
+    trigger_at = out.index("C-SORT-TRIGGER")
+    precede_at = out.index("C-SORT-PRECEDE")
+    assert root_at < trigger_at < precede_at
+    assert "1 results" in out
+
+
+def test_query_sort_invalid_exits_two(tmp_path, monkeypatch, capsys):
+    _init(tmp_path, monkeypatch)
+    assert main(["query", "--sort", "bogus"]) == 2
+    assert "sort" in capsys.readouterr().err.lower()

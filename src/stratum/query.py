@@ -3,8 +3,9 @@
 The default claim/card/block view is active content. ``--include-draft``
 opens the review backlog for claims and cards (draft, rejected, stale) and
 stale/missing blocks for block queries. An explicit ``--status`` always
-wins. ``--follow`` adds one hop of claim/card/report relations. No FTS table
-is required: ``--grep`` is a parameterised SQL LIKE.
+wins. ``--follow`` adds one hop of claim/card/report relations; ``--sort
+relevance`` puts primary hits first, then causal relations, then time. No FTS
+table is required: ``--grep`` is a parameterised SQL LIKE.
 """
 
 from __future__ import annotations
@@ -38,6 +39,17 @@ QUERY_STATUSES = frozenset(
     }
 )
 DEFAULT_LIMIT = 50
+SORT_MODES = ("time", "relevance")
+RELATION_PRIORITY = {
+    "triggered_by": 0,
+    "derived_from": 1,
+    "supported_by": 2,
+    "contradicts": 3,
+    "supersedes": 4,
+    "precedes": 5,
+    "same_day": 6,
+    "state_of": 7,
+}
 
 
 @dataclass(frozen=True)
@@ -117,6 +129,7 @@ def query_items(
     limit: int = DEFAULT_LIMIT,
     context: int = 0,
     follow: bool = False,
+    sort: str = "time",
 ) -> list[QueryRow]:
     if entity_type not in QUERY_ENTITY_TYPES:
         raise UsageProblem(
@@ -130,6 +143,8 @@ def query_items(
         raise UsageProblem("--context is only valid for block queries")
     if follow and entity_type in {"block", "prose", "structured"}:
         raise UsageProblem("--follow is only valid for claim, card or report queries")
+    if sort not in SORT_MODES:
+        raise UsageProblem("--sort must be time or relevance")
     if status is not None and status not in QUERY_STATUSES:
         raise UsageProblem(f"unknown status {status!r}")
     if claim_type is not None:
@@ -198,8 +213,11 @@ def query_items(
         ]
         if follow and result:
             if entity_type == "claim":
-                return _follow_claim_rows(conn, result)
-            return _follow_card_rows(conn, result)
+                result = _follow_claim_rows(conn, result)
+            else:
+                result = _follow_card_rows(conn, result)
+        if sort == "relevance":
+            result = _sort_relevance(result)
         return result
 
     if entity_type == "report":
@@ -235,7 +253,9 @@ def query_items(
             for row in rows
         ]
         if follow and result:
-            return _follow_report_rows(conn, result)
+            result = _follow_report_rows(conn, result)
+        if sort == "relevance":
+            result = _sort_relevance(result)
         return result
 
     retrieval_type: str | None = None
@@ -276,6 +296,22 @@ def query_items(
     if context and rows:
         rows = _with_block_context(conn, rows, context)
     return rows
+
+
+def _sort_relevance(rows: Sequence[QueryRow]) -> list[QueryRow]:
+    def key(row: QueryRow) -> tuple[int, int, str, str]:
+        if not row.context:
+            return (0, 0, row.period_start or "", row.entity_id)
+        if row.relation_type and row.relation_type.startswith("report_card:"):
+            return (2, 0, row.period_start or "", row.entity_id)
+        return (
+            1,
+            RELATION_PRIORITY.get(row.relation_type or "", 99),
+            row.period_start or "",
+            row.entity_id,
+        )
+
+    return sorted(rows, key=key)
 
 
 def _follow_targets(

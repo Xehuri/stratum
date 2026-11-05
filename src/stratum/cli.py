@@ -318,6 +318,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="include one-hop related claims/cards/reports",
     )
+    query_parser.add_argument(
+        "--sort",
+        choices=("time", "relevance"),
+        default="time",
+        help="sort primary rows and followed relation context",
+    )
 
     commit_parser = subparsers.add_parser(
         "commit", help="record working index changes as one linear commit"
@@ -784,6 +790,7 @@ def _handle_query(args: argparse.Namespace) -> int:
             limit=args.limit,
             context=args.context,
             follow=args.follow,
+            sort=args.sort,
         )
         sys.stdout.write(format_query_rows(rows))
     finally:
