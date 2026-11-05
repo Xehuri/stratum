@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .add import add_card, add_claim
+from .add import add_card, add_claim, add_relation
 from .claims import CLAIM_TYPES
 from .db import open_db
 from .demo import run_demo
@@ -229,6 +229,20 @@ def build_parser() -> argparse.ArgumentParser:
     claim_parser.add_argument("--body", required=True, metavar="TEXT")
     claim_parser.add_argument("--report-id", metavar="REPORT_ID")
     claim_parser.add_argument("--author", metavar="NAME")
+
+    relation_parser = add_sub.add_parser(
+        "relation", help="create one explicit card relation"
+    )
+    relation_parser.add_argument("--from-card", required=True, metavar="CARD")
+    relation_parser.add_argument("--to-card", required=True, metavar="CARD")
+    relation_parser.add_argument(
+        "--type", required=True, dest="relation_type", metavar="TYPE"
+    )
+    relation_parser.add_argument(
+        "--claim-type",
+        choices=("temporal", "causal", "associative"),
+        help="classify the relation; defaults from --type",
+    )
 
     review_parser = subparsers.add_parser(
         "review", help="review, promote, reject and reopen drafts"
@@ -494,7 +508,7 @@ def _handle_add(args: argparse.Namespace) -> int:
     action = args.add_command
     if action is None:
         print(
-            "stratum: error: add requires an action (card, claim)",
+            "stratum: error: add requires an action (card, claim, relation)",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -535,6 +549,23 @@ def _handle_add(args: argparse.Namespace) -> int:
             return EXIT_OK
         _print(f"Added claim: {result.claim_id}")
         _print(f"Evidence: {result.evidence_count}")
+        return EXIT_OK
+    if action == "relation":
+        result = add_relation(
+            from_card=args.from_card,
+            to_card=args.to_card,
+            relation_type=args.relation_type,
+            claim_type=args.claim_type,
+            workspace=args.workspace,
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Added relation: {result.relation_id}")
+        _print(
+            f"{result.from_card_id} --{result.relation_type}--> "
+            f"{result.to_card_id} ({result.claim_type})"
+        )
         return EXIT_OK
     print(f"stratum: error: unknown add action: {action}", file=sys.stderr)
     return EXIT_USAGE

@@ -1,8 +1,9 @@
-"""Manual draft creation: ``stratum add card`` and ``stratum add claim``.
+"""Manual draft creation: ``stratum add card``, ``add claim`` and ``add relation``.
 
-Both commands are idempotent for identical content. Cards link structured
+All commands are idempotent for identical content. Cards link structured
 blocks as evidence; claims reuse the report contract validators and evidence
-resolution so manual drafts cannot bypass the claim rules.
+resolution so manual drafts cannot bypass the claim rules. Card relations are
+the explicit causal/temporal graph between cards.
 """
 
 from __future__ import annotations
@@ -32,12 +33,36 @@ from .workspace import resolve_workspace
 __all__ = [
     "AddCardResult",
     "AddClaimResult",
+    "AddRelationResult",
     "CARD_TYPES",
+    "CARD_RELATION_TYPES",
     "add_card",
     "add_claim",
+    "add_relation",
 ]
 
 CARD_TYPES = ("event", "observation", "finding", "state", "decision")
+CARD_RELATION_TYPES = (
+    "derived_from",
+    "supported_by",
+    "precedes",
+    "state_of",
+    "triggered_by",
+    "same_day",
+    "supersedes",
+    "contradicts",
+)
+RELATION_CLAIM_TYPES = ("temporal", "causal", "associative")
+DEFAULT_RELATION_CLAIM_TYPE = {
+    "precedes": "temporal",
+    "same_day": "temporal",
+    "triggered_by": "causal",
+    "derived_from": "causal",
+    "supported_by": "associative",
+    "state_of": "associative",
+    "supersedes": "associative",
+    "contradicts": "associative",
+}
 
 
 @dataclass(frozen=True)
@@ -52,6 +77,16 @@ class AddClaimResult:
     status: str
     claim_id: str
     evidence_count: int
+
+
+@dataclass(frozen=True)
+class AddRelationResult:
+    status: str
+    relation_id: str
+    from_card_id: str
+    to_card_id: str
+    relation_type: str
+    claim_type: str
 
 
 def _card_title(title: str | None, body: str) -> str:
@@ -337,6 +372,87 @@ def add_claim(
             count = _write_evidence(conn, draft)
             return AddClaimResult(
                 status="created", claim_id=claim_id, evidence_count=count
+            )
+    finally:
+        conn.close()
+
+
+def add_relation(
+    *,
+    from_card: str,
+    to_card: str,
+    relation_type: str,
+    claim_type: str | None = None,
+    workspace: str | None = None,
+) -> AddRelationResult:
+    if relation_type not in CARD_RELATION_TYPES:
+        raise ValidationError(
+            "CARD_RELATION_INVALID",
+            f"relation type must be one of: {', '.join(CARD_RELATION_TYPES)}",
+        )
+    if from_card == to_card:
+        raise ValidationError(
+            "CARD_RELATION_INVALID", "a card cannot relate to itself"
+        )
+    resolved_claim_type = claim_type or DEFAULT_RELATION_CLAIM_TYPE[relation_type]
+    if resolved_claim_type not in RELATION_CLAIM_TYPES:
+        raise ValidationError(
+            "CARD_RELATION_INVALID",
+            f"claim type must be one of: {', '.join(RELATION_CLAIM_TYPES)}",
+        )
+
+    conn = _workspace_conn(workspace)
+    try:
+        with transaction(conn):
+            for card_id in (from_card, to_card):
+                if conn.execute(
+                    "SELECT 1 FROM cards WHERE id = ?", (card_id,)
+                ).fetchone() is None:
+                    raise ValidationError(
+                        "CARD_NOT_FOUND", f"card {card_id} does not exist"
+                    )
+            existing = conn.execute(
+                """
+                SELECT id FROM card_relations
+                WHERE from_card_id = ? AND to_card_id = ? AND relation_type = ?
+                """,
+                (from_card, to_card, relation_type),
+            ).fetchone()
+            if existing is not None:
+                return AddRelationResult(
+                    status="unchanged",
+                    relation_id=str(existing["id"]),
+                    from_card_id=from_card,
+                    to_card_id=to_card,
+                    relation_type=relation_type,
+                    claim_type=resolved_claim_type,
+                )
+            relation_id = "REL-" + hashlib.sha256(
+                f"{from_card}\x00{to_card}\x00{relation_type}".encode("utf-8")
+            ).hexdigest()[:16]
+            conn.execute(
+                """
+                INSERT INTO card_relations (
+                    id, from_card_id, to_card_id, relation_type,
+                    claim_type, source, created_at
+                ) VALUES (?, ?, ?, ?, ?, 'agent', ?)
+                """,
+                (
+                    relation_id,
+                    from_card,
+                    to_card,
+                    relation_type,
+                    resolved_claim_type,
+                    utcnow(),
+                ),
+            )
+            return AddRelationResult(
+                status="created",
+                relation_id=relation_id,
+                from_card_id=from_card,
+                to_card_id=to_card,
+                relation_type=relation_type,
+                claim_type=resolved_claim_type,
             )
     finally:
         conn.close()

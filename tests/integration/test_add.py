@@ -556,3 +556,101 @@ def test_add_card_rejects_invalid_date_and_period_end(
         assert conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 0
     finally:
         conn.close()
+
+
+def _seed_two_cards(root: Path) -> None:
+    conn = _db(root)
+    try:
+        _seed_card(conn, "C-REL-0001")
+        _seed_card(conn, "C-REL-0002")
+    finally:
+        conn.close()
+
+
+def test_add_relation_creates_explicit_causal_edge(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    _seed_two_cards(root)
+
+    assert main(
+        [
+            "add",
+            "relation",
+            "--from-card",
+            "C-REL-0001",
+            "--to-card",
+            "C-REL-0002",
+            "--type",
+            "triggered_by",
+        ]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "Added relation: REL-" in out
+    assert "triggered_by" in out
+
+    conn = _db(root)
+    try:
+        relation = conn.execute("SELECT * FROM card_relations").fetchone()
+        assert relation["from_card_id"] == "C-REL-0001"
+        assert relation["to_card_id"] == "C-REL-0002"
+        assert relation["relation_type"] == "triggered_by"
+        assert relation["claim_type"] == "causal"
+        assert relation["source"] == "agent"
+    finally:
+        conn.close()
+
+
+def test_add_relation_is_idempotent(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    _seed_two_cards(root)
+    args = [
+        "add", "relation",
+        "--from-card", "C-REL-0001",
+        "--to-card", "C-REL-0002",
+        "--type", "precedes",
+    ]
+
+    assert main(args) == 0
+    capsys.readouterr()
+    assert main(args) == 0
+    assert capsys.readouterr().out.strip() == "unchanged"
+
+    conn = _db(root)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM card_relations").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_add_relation_rejects_invalid_edge(tmp_path, monkeypatch, capsys):
+    root = _init(tmp_path, monkeypatch)
+    _seed_two_cards(root)
+
+    assert main(
+        [
+            "add", "relation",
+            "--from-card", "C-REL-0001",
+            "--to-card", "C-REL-0002",
+            "--type", "not-a-relation",
+        ]
+    ) == 1
+    assert "CARD_RELATION_INVALID" in capsys.readouterr().err
+
+    assert main(
+        [
+            "add", "relation",
+            "--from-card", "C-REL-0001",
+            "--to-card", "C-REL-0001",
+            "--type", "precedes",
+        ]
+    ) == 1
+    assert "CARD_RELATION_INVALID" in capsys.readouterr().err
+
+    assert main(
+        [
+            "add", "relation",
+            "--from-card", "C-REL-0001",
+            "--to-card", "C-MISSING",
+            "--type", "precedes",
+        ]
+    ) == 1
+    assert "CARD_NOT_FOUND" in capsys.readouterr().err
