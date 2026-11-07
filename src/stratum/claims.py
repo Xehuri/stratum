@@ -39,6 +39,7 @@ __all__ = [
     "parse_field_lines",
     "resolve_evidence",
     "update_claim_row",
+    "validate_claim_relation",
     "validate_relations",
 ]
 
@@ -1006,6 +1007,147 @@ def validate_relations(
             raise ValidationError(
                 "CONTRADICTS_INVALID",
                 f"{where}: contradicts may only point to the same or a lower layer",
+            )
+
+
+def validate_claim_relation(
+    conn: sqlite3.Connection,
+    from_claim_id: str,
+    to_claim_id: str,
+    relation_type: str,
+) -> None:
+    """Validate one manually authored claim-to-claim relation.
+
+    Report ingest validates relations against a parsed draft. The explicit
+    CLI entry writes relations after both claims already exist, so it needs
+    the same layer, period and status checks without a draft object.
+    """
+
+    if relation_type not in RELATION_TYPES:
+        raise ValidationError(
+            "RELATION_INVALID", f"unknown relation type {relation_type!r}"
+        )
+    if from_claim_id == to_claim_id:
+        raise ValidationError(
+            "RELATION_INVALID", "a claim cannot relate to itself"
+        )
+
+    from_row = _claim_row(conn, from_claim_id)
+    if from_row is None:
+        raise ValidationError(
+            "CLAIM_NOT_FOUND", f"claim {from_claim_id} does not exist"
+        )
+    to_row = _claim_row(conn, to_claim_id)
+    if to_row is None:
+        raise ValidationError(
+            "CLAIM_NOT_FOUND", f"claim {to_claim_id} does not exist"
+        )
+
+    if str(from_row["status"]) in {"rejected", "superseded"}:
+        raise ValidationError(
+            "RELATION_INVALID",
+            f"claim {from_claim_id} is {from_row['status']} and cannot own relations",
+        )
+    if str(to_row["status"]) in {"rejected", "superseded"}:
+        raise ValidationError(
+            "RELATION_INVALID",
+            f"claim {to_claim_id} is {to_row['status']} and cannot be a target",
+        )
+
+    from_id = parse_claim_id(from_claim_id)
+    to_id = parse_claim_id(to_claim_id)
+
+    if relation_type in {"derived_from", "supersedes"} and str(
+        from_row["status"]
+    ) == "active":
+        raise ValidationError(
+            "RELATION_INVALID",
+            "derived_from and supersedes must be written before "
+            "the source claim is promoted",
+        )
+
+    if relation_type == "derived_from":
+        expected_scale = {"W": "D", "B": "W"}.get(from_id.scale)
+        if expected_scale is None:
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                "daily claims cannot use derived_from",
+            )
+        if to_id.scale != expected_scale:
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                f"{from_id.scale} claims may only derive from "
+                f"{expected_scale} claims",
+            )
+        if from_id.scale == "W" and str(from_row["claim_type"]) != "observation":
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                "weekly derived_from sources must be observations",
+            )
+        if from_id.scale == "B" and str(from_row["claim_type"]) not in {
+            "pattern",
+            "hypothesis",
+        }:
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                "biweekly derived_from sources must be patterns or hypotheses",
+            )
+        if from_id.scale == "B" and str(to_row["claim_type"]) != "observation":
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                "biweekly derived_from targets must be weekly observations",
+            )
+        if (
+            str(from_row["period_start"]) > str(to_row["period_start"])
+            or str(to_row["period_end"]) > str(from_row["period_end"])
+        ):
+            raise ValidationError(
+                "DERIVED_FROM_LAYER",
+                f"derived_from target {to_claim_id} is outside the source period",
+            )
+
+    elif relation_type == "supersedes":
+        if str(to_row["status"]) not in {"active", "stale"}:
+            raise ValidationError(
+                "SUPERSEDES_INVALID",
+                "supersedes target must be active or stale",
+            )
+        if from_id.layer != to_id.layer:
+            raise ValidationError(
+                "SUPERSEDES_INVALID",
+                "supersedes target must be on the same layer",
+            )
+        if str(from_row["claim_type"]) != str(to_row["claim_type"]):
+            raise ValidationError(
+                "SUPERSEDES_INVALID",
+                "supersedes target must have the same claim type",
+            )
+        if (
+            str(to_row["period_start"]) > str(from_row["period_start"])
+            or str(to_row["period_end"]) > str(from_row["period_end"])
+        ):
+            raise ValidationError(
+                "SUPERSEDES_INVALID",
+                "supersedes target period is later than the source claim",
+            )
+        existing = conn.execute(
+            """
+            SELECT 1 FROM claim_relations
+            WHERE from_claim_id = ? AND relation_type = 'supersedes'
+            """,
+            (from_claim_id,),
+        ).fetchone()
+        if existing is not None:
+            raise ValidationError(
+                "SUPERSEDES_INVALID",
+                f"claim {from_claim_id} already supersedes another claim",
+            )
+
+    elif relation_type == "contradicts":
+        if to_id.layer > from_id.layer:
+            raise ValidationError(
+                "CONTRADICTS_INVALID",
+                "contradicts may only point to the same or a lower layer",
             )
 
 

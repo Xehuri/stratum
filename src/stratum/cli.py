@@ -13,7 +13,14 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .add import add_card, add_claim, add_relation
+from .add import (
+    CLAIM_RELATION_TYPES,
+    add_card,
+    add_claim,
+    add_claim_relation,
+    add_relation,
+    revise_claim,
+)
 from .claims import CLAIM_TYPES
 from .db import open_db
 from .demo import run_demo
@@ -243,6 +250,48 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("temporal", "causal", "associative"),
         help="classify the relation; defaults from --type",
     )
+
+    claim_relation_parser = add_sub.add_parser(
+        "claim-relation", help="create one explicit claim relation"
+    )
+    claim_relation_parser.add_argument(
+        "--from-claim", required=True, metavar="CLAIM_ID"
+    )
+    claim_relation_parser.add_argument(
+        "--to-claim", required=True, metavar="CLAIM_ID"
+    )
+    claim_relation_parser.add_argument(
+        "--type",
+        required=True,
+        dest="relation_type",
+        choices=CLAIM_RELATION_TYPES,
+        metavar="TYPE",
+    )
+
+    revise_parser = subparsers.add_parser(
+        "revise", help="revise a claim by creating a superseding draft"
+    )
+    revise_sub = revise_parser.add_subparsers(
+        dest="revise_command", metavar="ACTION"
+    )
+    revise_claim_parser = revise_sub.add_parser(
+        "claim", help="revise one claim"
+    )
+    revise_claim_parser.add_argument(
+        "--claim-id", required=True, metavar="CLAIM_ID"
+    )
+    revise_claim_parser.add_argument("--body", metavar="TEXT")
+    revise_claim_parser.add_argument(
+        "--confidence", choices=("high", "medium", "low")
+    )
+    revise_claim_parser.add_argument(
+        "--evidence",
+        action="append",
+        metavar="REF",
+        help="replacement evidence reference (repeatable)",
+    )
+    revise_claim_parser.add_argument("--author", required=True, metavar="NAME")
+    revise_claim_parser.add_argument("--reason", required=True, metavar="TEXT")
 
     review_parser = subparsers.add_parser(
         "review", help="review, promote, reject and reopen drafts"
@@ -519,7 +568,8 @@ def _handle_add(args: argparse.Namespace) -> int:
     action = args.add_command
     if action is None:
         print(
-            "stratum: error: add requires an action (card, claim, relation)",
+            "stratum: error: add requires an action "
+            "(card, claim, relation, claim-relation)",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -578,8 +628,50 @@ def _handle_add(args: argparse.Namespace) -> int:
             f"{result.to_card_id} ({result.claim_type})"
         )
         return EXIT_OK
+    if action == "claim-relation":
+        result = add_claim_relation(
+            from_claim=args.from_claim,
+            to_claim=args.to_claim,
+            relation_type=args.relation_type,
+            workspace=args.workspace,
+        )
+        if result.status == "unchanged":
+            _print("unchanged")
+            return EXIT_OK
+        _print(f"Added claim relation: {result.relation_id}")
+        _print(
+            f"{result.from_claim_id} --{result.relation_type}--> "
+            f"{result.to_claim_id}"
+        )
+        return EXIT_OK
     print(f"stratum: error: unknown add action: {action}", file=sys.stderr)
     return EXIT_USAGE
+
+
+def _handle_revise(args: argparse.Namespace) -> int:
+    action = args.revise_command
+    if action != "claim":
+        print(
+            "stratum: error: revise requires an action (claim)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    result = revise_claim(
+        claim_id=args.claim_id,
+        body=args.body,
+        confidence=args.confidence,
+        evidence=args.evidence,
+        author=args.author,
+        reason=args.reason,
+        workspace=args.workspace,
+    )
+    if result.status == "updated":
+        _print(f"Updated claim: {result.claim_id}")
+        return EXIT_OK
+    _print(f"Added revised claim: {result.claim_id}")
+    _print(f"Supersedes: {result.replaced_claim_id}")
+    _print(f"Status: draft; promote it with review promote")
+    return EXIT_OK
 
 
 def _handle_status(args: argparse.Namespace) -> int:
@@ -906,6 +998,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _handle_ingest(args)
     if args.command == "add":
         return _handle_add(args)
+    if args.command == "revise":
+        return _handle_revise(args)
     if args.command == "review":
         return _handle_review(args)
     if args.command == "query":

@@ -17,12 +17,20 @@ from datetime import timedelta
 
 from .claims import (
     ClaimDraft,
+    RELATION_TYPES,
+    claim_relations_for,
     delete_evidence,
+    detect_cycles,
     draft_from_fields,
     insert_claim_row,
+    insert_draft_relations,
     insert_evidence_link,
+    insert_relation,
+    parse_claim_id,
     resolve_evidence,
     update_claim_row,
+    validate_claim_relation,
+    validate_relations,
 )
 from .db import open_db
 from .errors import BusinessError, UsageProblem, ValidationError
@@ -32,13 +40,18 @@ from .workspace import resolve_workspace
 
 __all__ = [
     "AddCardResult",
+    "AddClaimRelationResult",
     "AddClaimResult",
     "AddRelationResult",
+    "ReviseClaimResult",
     "CARD_TYPES",
     "CARD_RELATION_TYPES",
+    "CLAIM_RELATION_TYPES",
     "add_card",
     "add_claim",
+    "add_claim_relation",
     "add_relation",
+    "revise_claim",
 ]
 
 CARD_TYPES = ("event", "observation", "finding", "state", "decision")
@@ -52,6 +65,7 @@ CARD_RELATION_TYPES = (
     "supersedes",
     "contradicts",
 )
+CLAIM_RELATION_TYPES = RELATION_TYPES
 RELATION_CLAIM_TYPES = ("temporal", "causal", "associative")
 DEFAULT_RELATION_CLAIM_TYPE = {
     "precedes": "temporal",
@@ -87,6 +101,23 @@ class AddRelationResult:
     to_card_id: str
     relation_type: str
     claim_type: str
+
+
+@dataclass(frozen=True)
+class AddClaimRelationResult:
+    status: str
+    relation_id: str
+    from_claim_id: str
+    to_claim_id: str
+    relation_type: str
+
+
+@dataclass(frozen=True)
+class ReviseClaimResult:
+    status: str
+    claim_id: str
+    replaced_claim_id: str
+    relation_id: str | None
 
 
 def _card_title(title: str | None, body: str) -> str:
@@ -453,6 +484,262 @@ def add_relation(
                 to_card_id=to_card,
                 relation_type=relation_type,
                 claim_type=resolved_claim_type,
+            )
+    finally:
+        conn.close()
+
+
+def add_claim_relation(
+    *,
+    from_claim: str,
+    to_claim: str,
+    relation_type: str,
+    workspace: str | None = None,
+) -> AddClaimRelationResult:
+    """Create one explicit claim relation without re-ingesting a report."""
+
+    if relation_type not in CLAIM_RELATION_TYPES:
+        raise ValidationError(
+            "RELATION_INVALID",
+            f"relation type must be one of: {', '.join(CLAIM_RELATION_TYPES)}",
+        )
+
+    conn = _workspace_conn(workspace)
+    try:
+        with transaction(conn):
+            validate_claim_relation(conn, from_claim, to_claim, relation_type)
+            existing = conn.execute(
+                """
+                SELECT id FROM claim_relations
+                WHERE from_claim_id = ? AND to_claim_id = ? AND relation_type = ?
+                """,
+                (from_claim, to_claim, relation_type),
+            ).fetchone()
+            if existing is not None:
+                return AddClaimRelationResult(
+                    status="unchanged",
+                    relation_id=str(existing["id"]),
+                    from_claim_id=from_claim,
+                    to_claim_id=to_claim,
+                    relation_type=relation_type,
+                )
+
+            insert_relation(conn, from_claim, to_claim, relation_type)
+            detect_cycles(conn)
+            row = conn.execute(
+                """
+                SELECT id FROM claim_relations
+                WHERE from_claim_id = ? AND to_claim_id = ? AND relation_type = ?
+                """,
+                (from_claim, to_claim, relation_type),
+            ).fetchone()
+            return AddClaimRelationResult(
+                status="created",
+                relation_id=str(row["id"]),
+                from_claim_id=from_claim,
+                to_claim_id=to_claim,
+                relation_type=relation_type,
+            )
+    finally:
+        conn.close()
+
+
+def _next_claim_id(conn: sqlite3.Connection, claim_id: str) -> str:
+    parsed = parse_claim_id(claim_id)
+    prefix = f"{parsed.prefix}-{parsed.scale}-{parsed.period}-"
+    rows = conn.execute(
+        "SELECT id FROM claims WHERE id LIKE ?", (prefix + "%",)
+    ).fetchall()
+    used = {
+        int(str(row["id"])[-2:])
+        for row in rows
+        if str(row["id"])[-2:].isdigit()
+    }
+    next_number = max(used, default=0) + 1
+    if next_number > 99:
+        raise ValidationError(
+            "CLAIM_ID_EXHAUSTED",
+            f"claim sequence for {prefix} is exhausted",
+        )
+    return f"{prefix}{next_number:02d}"
+
+
+def _claim_evidence_refs(
+    conn: sqlite3.Connection, claim_id: str
+) -> tuple[str, ...]:
+    rows = conn.execute(
+        """
+        SELECT target_type, target_id, quote_sha256
+        FROM evidence_links
+        WHERE owner_type = 'claim' AND owner_id = ?
+        ORDER BY target_type, target_id
+        """,
+        (claim_id,),
+    ).fetchall()
+    refs: list[str] = []
+    for row in rows:
+        target_id = str(row["target_id"])
+        if row["target_type"] == "block" and row["quote_sha256"]:
+            target_id = f"{target_id}#sha256:{row['quote_sha256']}"
+        refs.append(target_id)
+    return tuple(refs)
+
+
+def _claim_relation_refs(
+    conn: sqlite3.Connection, claim_id: str, relation_type: str
+) -> tuple[str, ...]:
+    return tuple(
+        str(row["to_claim_id"])
+        for row in claim_relations_for(conn, claim_id)
+        if str(row["relation_type"]) == relation_type
+    )
+
+
+def revise_claim(
+    *,
+    claim_id: str,
+    body: str | None = None,
+    confidence: str | None = None,
+    evidence: list[str] | None = None,
+    author: str,
+    reason: str,
+    workspace: str | None = None,
+) -> ReviseClaimResult:
+    """Create a draft replacement for an active claim.
+
+    Active claims are immutable by contract. The replacement keeps the old
+    claim's scale, period, type and evidence, adds ``supersedes``, and stays
+    draft until the caller promotes it. A draft claim is updated in place.
+    """
+
+    if body is None and confidence is None and evidence is None:
+        raise UsageProblem(
+            "revise requires at least one of --body, --confidence or --evidence"
+        )
+    if not reason.strip():
+        raise UsageProblem("revise requires a non-empty --reason")
+
+    conn = _workspace_conn(workspace)
+    try:
+        with transaction(conn):
+            old = conn.execute(
+                "SELECT * FROM claims WHERE id = ?", (claim_id,)
+            ).fetchone()
+            if old is None:
+                raise ValidationError(
+                    "CLAIM_NOT_FOUND", f"claim {claim_id} does not exist"
+                )
+            old_status = str(old["status"])
+            if old_status in {"rejected", "superseded"}:
+                raise ValidationError(
+                    "CLAIM_IMMUTABLE",
+                    f"claim {claim_id} is {old_status} and cannot be revised",
+                )
+            if old_status not in {"draft", "active", "stale"}:
+                raise ValidationError(
+                    "CLAIM_IMMUTABLE",
+                    f"claim {claim_id} is {old_status} and cannot be revised",
+                )
+
+            evidence_refs = (
+                tuple(evidence)
+                if evidence is not None
+                else _claim_evidence_refs(conn, claim_id)
+            )
+            old_derived = _claim_relation_refs(conn, claim_id, "derived_from")
+            old_contradicts = _claim_relation_refs(conn, claim_id, "contradicts")
+            old_parsed = parse_claim_id(claim_id)
+            report_type = {
+                "D": "daily",
+                "W": "weekly",
+                "B": "biweekly",
+            }[old_parsed.scale]
+            is_replacement = old_status in {"active", "stale"}
+            new_claim_id = (
+                _next_claim_id(conn, claim_id) if is_replacement else claim_id
+            )
+
+            fields: dict[str, tuple[str, ...]] = {
+                "claim_id": (new_claim_id,),
+                "claim_type": (str(old["claim_type"]),),
+                "period_start": (str(old["period_start"]),),
+                "period_end": (str(old["period_end"]),),
+                "granularity": (str(old["granularity"]),),
+                "entities": tuple(json.loads(str(old["entities_json"]))),
+                "confidence": (
+                    confidence if confidence is not None else str(old["confidence"]),
+                ),
+                "body": (body if body is not None else str(old["body"]),),
+            }
+            if evidence_refs:
+                fields["evidence"] = evidence_refs
+            if old_derived:
+                fields["derived_from"] = old_derived
+            if old_contradicts:
+                fields["contradicts"] = old_contradicts
+            if is_replacement:
+                fields["supersedes"] = (claim_id,)
+            for key in (
+                "data_gap",
+                "metric",
+                "baseline",
+                "delta",
+                "sample_size",
+                "conditions",
+                "outcome",
+                "support_count",
+                "opportunity_count",
+                "counterexample_count",
+                "counterexample_note",
+                "lag",
+            ):
+                value = old[key]
+                if value is not None:
+                    fields[key] = (str(value),)
+
+            draft = draft_from_fields(
+                fields,
+                report_type=report_type,
+                report_id=None,
+                author=author or old["author"],
+                require_type_fields=True,
+                where=f"claim {new_claim_id}",
+            )
+            validate_relations(
+                conn,
+                draft,
+                report_type=report_type,
+                where=f"claim {new_claim_id}",
+            )
+
+            if is_replacement:
+                insert_claim_row(conn, draft)
+                _write_evidence(conn, draft)
+                insert_draft_relations(conn, draft)
+                detect_cycles(conn)
+                relation = conn.execute(
+                    """
+                    SELECT id FROM claim_relations
+                    WHERE from_claim_id = ? AND to_claim_id = ?
+                      AND relation_type = 'supersedes'
+                    """,
+                    (new_claim_id, claim_id),
+                ).fetchone()
+                return ReviseClaimResult(
+                    status="created",
+                    claim_id=new_claim_id,
+                    replaced_claim_id=claim_id,
+                    relation_id=str(relation["id"]) if relation else None,
+                )
+
+            update_claim_row(conn, draft)
+            delete_evidence(conn, claim_id)
+            _write_evidence(conn, draft)
+            return ReviseClaimResult(
+                status="updated",
+                claim_id=claim_id,
+                replaced_claim_id=claim_id,
+                relation_id=None,
             )
     finally:
         conn.close()

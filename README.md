@@ -36,6 +36,8 @@ stratum ingest report
 stratum add card
 stratum add claim
 stratum add relation
+stratum add claim-relation
+stratum revise claim
 stratum review list/show/promote/reject/reopen/bulk-promote
 stratum query
 stratum query --follow --sort relevance

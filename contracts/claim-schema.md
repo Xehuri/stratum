@@ -475,6 +475,31 @@ source block
 - 发现环时，整个报告 ingest 失败，报 `CYCLE_DETECTED`。
 - `contradicts` 允许双向边，但禁止自环。
 
+### 7.7 显式关系写入与修正
+
+报告 ingest 会从 `derived_from` / `supersedes` / `contradicts` 字段写入关系。需要单独补充或修正时，使用：
+
+```bash
+stratum add claim-relation --from-claim OBS-W-2026-01-05-01 --to-claim OBS-D-2026-01-05-01 --type derived_from
+```
+
+- 源 claim 必须是 `draft` 或 `stale`；`active` 源拒绝写入 `derived_from` / `supersedes`，必须先生成新的 draft。
+- 日层 claim 不得写 `derived_from`；周报写 `OBS-W -> OBS-D`，双周报写 `PAT/HYP-B -> OBS-W`。
+- `supersedes` 只能指向同层同类型且为 `active` / `stale` 的 claim；一个 claim 最多 supersede 一个旧 claim。
+- `contradicts` 只能指向同层或更低层 claim。
+- 目标为 `rejected` / `superseded` 时拒绝写入。
+
+修改 `active` / `stale` claim 时不得直接改正文：
+
+```bash
+stratum revise claim --claim-id OBS-D-2026-01-05-01 --body "修正后的结论" --author 04-weekly-review --reason "周报交叉核对后修正"
+```
+
+- 生成同层、同类型、同周期的新 claim（序列递增）并自动写 `supersedes`；新 claim 保持 `draft`。
+- 新 claim promote 后，旧 claim 才变为 `superseded`。
+- `draft` claim 使用 `revise` 时原地更新，不新建 claim。
+- 周报可以修正日结论，双周报可以修正周观测；修正后的新 claim 由有权 promotion 的角色转正。04 对本次 `revise` 生成的替换日 claim 允许单条 promote；03 不得自行 promote。
+
 ## 8. 证据下限
 
 - 每个 claim 必须至少有一条 `evidence`，或者一条 `data_gap`。
