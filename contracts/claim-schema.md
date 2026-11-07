@@ -483,7 +483,7 @@ source block
 stratum add claim-relation --from-claim OBS-W-2026-01-05-01 --to-claim OBS-D-2026-01-05-01 --type derived_from
 ```
 
-- 源 claim 必须是 `draft` 或 `stale`；`active` 源拒绝写入 `derived_from` / `supersedes`，必须先生成新的 draft。
+- `supersedes` 的源 claim 必须是 `draft` 或 `stale`；`derived_from` 的源 claim 已 `active` 时，目标必须也是 `active`；源为 `draft` / `stale` 时目标可暂为 `draft`，promotion 前再转正。
 - 日层 claim 不得写 `derived_from`；周报写 `OBS-W -> OBS-D`，双周报写 `PAT/HYP-B -> OBS-W`。
 - `supersedes` 只能指向同层同类型且为 `active` / `stale` 的 claim；一个 claim 最多 supersede 一个旧 claim。
 - `contradicts` 只能指向同层或更低层 claim。
