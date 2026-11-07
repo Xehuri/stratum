@@ -364,7 +364,7 @@ def test_claim_relation_derived_from_biweekly_to_weekly(
     assert "Added claim relation: CLR-" in capsys.readouterr().out
 
 
-def test_claim_relation_rejects_active_derived_source(
+def test_claim_relation_allows_active_derived_source_with_active_target(
     tmp_path, monkeypatch, capsys
 ):
     root = _init(tmp_path, monkeypatch)
@@ -379,6 +379,34 @@ def test_claim_relation_rejects_active_derived_source(
             granularity="week",
         )
         _seed_claim(conn, "OBS-D-2026-01-05-01")
+    finally:
+        conn.close()
+
+    assert main(
+        _claim_relation_args(
+            "OBS-W-2026-01-05-01",
+            "OBS-D-2026-01-05-01",
+            "derived_from",
+        )
+    ) == 0
+    assert "Added claim relation: CLR-" in capsys.readouterr().out
+
+
+def test_claim_relation_rejects_active_derived_source_with_draft_target(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_claim(
+            conn,
+            "OBS-W-2026-01-05-01",
+            status="active",
+            period_start="2026-01-05",
+            period_end="2026-01-12",
+            granularity="week",
+        )
+        _seed_claim(conn, "OBS-D-2026-01-05-01", status="draft")
     finally:
         conn.close()
 
@@ -454,3 +482,42 @@ def test_revise_and_promote_daily_claim_from_weekly_author(
         assert new["status"] == "active"
     finally:
         conn.close()
+
+
+def test_claim_relation_remains_idempotent_after_source_promotion(
+    tmp_path, monkeypatch, capsys
+):
+    root = _init(tmp_path, monkeypatch)
+    conn = _db(root)
+    try:
+        _seed_claim(
+            conn,
+            "OBS-W-2026-01-05-01",
+            status="draft",
+            period_start="2026-01-05",
+            period_end="2026-01-12",
+            granularity="week",
+        )
+        _seed_claim(conn, "OBS-D-2026-01-05-01")
+    finally:
+        conn.close()
+
+    args = _claim_relation_args(
+        "OBS-W-2026-01-05-01",
+        "OBS-D-2026-01-05-01",
+        "derived_from",
+    )
+    assert main(args) == 0
+    capsys.readouterr()
+
+    conn = _db(root)
+    try:
+        conn.execute(
+            "UPDATE claims SET status = 'active' WHERE id = 'OBS-W-2026-01-05-01'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert main(args) == 0
+    assert capsys.readouterr().out.strip() == "unchanged"

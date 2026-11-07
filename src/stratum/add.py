@@ -507,7 +507,6 @@ def add_claim_relation(
     conn = _workspace_conn(workspace)
     try:
         with transaction(conn):
-            validate_claim_relation(conn, from_claim, to_claim, relation_type)
             existing = conn.execute(
                 """
                 SELECT id FROM claim_relations
@@ -524,6 +523,7 @@ def add_claim_relation(
                     relation_type=relation_type,
                 )
 
+            validate_claim_relation(conn, from_claim, to_claim, relation_type)
             insert_relation(conn, from_claim, to_claim, relation_type)
             detect_cycles(conn)
             row = conn.execute(

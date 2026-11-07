@@ -1057,13 +1057,10 @@ def validate_claim_relation(
     from_id = parse_claim_id(from_claim_id)
     to_id = parse_claim_id(to_claim_id)
 
-    if relation_type in {"derived_from", "supersedes"} and str(
-        from_row["status"]
-    ) == "active":
+    if relation_type == "supersedes" and str(from_row["status"]) == "active":
         raise ValidationError(
             "RELATION_INVALID",
-            "derived_from and supersedes must be written before "
-            "the source claim is promoted",
+            "supersedes must be written before the source claim is promoted",
         )
 
     if relation_type == "derived_from":
@@ -1096,6 +1093,14 @@ def validate_claim_relation(
             raise ValidationError(
                 "DERIVED_FROM_LAYER",
                 "biweekly derived_from targets must be weekly observations",
+            )
+        if (
+            str(from_row["status"]) == "active"
+            and str(to_row["status"]) != "active"
+        ):
+            raise ValidationError(
+                "RELATION_INVALID",
+                "an active source may only derive from active claims",
             )
         if (
             str(from_row["period_start"]) > str(to_row["period_start"])
